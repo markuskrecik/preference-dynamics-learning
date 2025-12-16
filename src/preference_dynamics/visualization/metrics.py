@@ -118,6 +118,9 @@ def plot_training_curves(
 def plot_metrics(
     metrics: dict[str, float | NDArray[Literal["*"], float]],
     target_names: list[str] | None = None,
+    *,
+    width: int = 700,
+    height: int = 1000,
     **kwargs: Any,
 ) -> None:
     """
@@ -218,7 +221,7 @@ def plot_metrics(
             col=1,
         )
         fig.update_xaxes(title_text="Metric", row=1, col=1, tickangle=-45)
-        fig.update_yaxes(title_text="Value", row=1, col=1)
+        fig.update_yaxes(title_text="Value", row=1, col=1, autorangeoptions_include=1.1)
 
     row_idx = 2
     col_idx = 1
@@ -266,6 +269,8 @@ def plot_metrics(
     fig.update_layout(
         title_text="Model Performance Metrics",
         showlegend=False,
+        width=width,
+        height=height,
         **kwargs,
     )
 

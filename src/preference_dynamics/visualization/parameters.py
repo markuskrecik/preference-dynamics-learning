@@ -18,7 +18,7 @@ def plot_parameter_comparison(
     *,
     title: str = "Predictions vs True Values",
     render_mode: str = "webgl",
-    width: int = 600,  # fake aspect ratio ~ 1, not even sure if it's possible otherwise for facets
+    width: int = 700,  # fake aspect ratio ~ 1, not even sure if it's possible otherwise for facets
     **kwargs: Any,
 ) -> None:
     """
