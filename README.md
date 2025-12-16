@@ -20,7 +20,8 @@ I will use **convolutional neural networks** (CNNs) and **physics informed neura
 
 <!-- training -->
 
-**Project overview:**
+## Project overview
+
 The project consists of a feature-rich experimentation suite for model training using pytorch, and a series of notebooks for synthetic data generation, exploration, feature engineering and training.
 
 The experimentation suite includes:
@@ -69,6 +70,20 @@ The experimentation suite includes:
 
 *Why not pytorch lightning?* Of course pytorch lightning is incredibly convenient, but it's not the industry standard. I rather want to demonstrate fluency with vanilla pytorch and show off a well-designed custom implementation with full control over model training and tracking.
 
+### Model Architectures
+
+#### 0. Linear Regression: Baseline
+- Linear regression with manual and automated (tsfresh) feature extraction
+- Easy to implement and interpret
+
+#### 1. 1d Convolutional Neural Network (CNN)
+- Good for local pattern detection in repeating time series
+- Uses adaptive pooling for variable-length sequences
+
+#### 2. Physics-Informed Neural Network (PINN)
+- Incorporates DE structure into learning
+- Better generalization through constraint enforcement
+
 
 ## Quick Start
 
@@ -116,7 +131,6 @@ uv run jupyter lab
 All experiments are automatically tracked with MLflow:
 
 ```bash
-# View results in MLflow
 uv run mlflow ui --port 5000 --backend-store-uri sqlite:///mlruns.db
 # Open http://localhost:5000
 ```
@@ -128,21 +142,6 @@ uv run mlflow ui --port 5000 --backend-store-uri sqlite:///mlruns.db
 - Dataset statistics
 
 
-## Model Architectures
-
-### 0. Linear Regression: Baseline
-- Linear regression with manual and automated (tsfresh) feature extraction
-- Easy to implement and interpret
-
-### 1. 1d Convolutional Neural Network (CNN)
-- Good for local pattern detection in repeating time series
-- Uses adaptive pooling for variable-length sequences
-
-### 2. Physics-Informed Neural Network (PINN)
-- Incorporates DE structure into learning
-- Better generalization through constraint enforcement
-
-
 ## Project Structure
 
 ```
@@ -150,7 +149,6 @@ preference-dynamics-learning/
 ├── README.md               # This file
 ├── LICENSE.md              # License
 ├── pyproject.toml          # Project config, dependencies, tool settings
-├── .python-version         # Python 3.13
 ├── .pre-commit-config.yaml # Pre-commit hooks
 ├── mlruns.db               # MLflow tracking database (not in git)
 ├── optuna.db               # Optuna hyperparameter study tracking database (not in git)
@@ -177,9 +175,9 @@ preference-dynamics-learning/
 │   └── ...
 │
 ├── data/                   # Generated data (not in git)
-│   ├── n1/                # Data for n=1 actions
-│   ├── n2/                # Data for n=2 actions
-│   └── n3/                # Data for n=3 actions
+│   ├── n1/                 # Data for n=1 actions
+│   ├── n2/                 # Data for n=2 actions
+│   └── n3/                 # Data for n=3 actions
 │
 ├── checkpoints/            # Trainer state checkpoints (not in git)
 └── mlruns/                 # MLflow model checkpoints (not in git)
@@ -250,4 +248,3 @@ GNU General Public License v3.0 - see [LICENSE.md](LICENSE.md) file for details.
 ## Contact
 
 **Author**: Markus Krecik
-**Email**: markus.krecik@proton.me
