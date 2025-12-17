@@ -252,19 +252,19 @@ class Trainer:
         stop = self.patience_counter >= self.max_patience
         return is_best, stop
 
-    def _predict_step(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def _predict_step(self, batch: dict[str, dict[str, torch.Tensor]]) -> torch.Tensor:
         """
         Compute predictions for one batch.
 
         Args:
-            batch: Batch dictionary with "data" key containing input tensor
+            batch: Batch dictionary with "inputs" key containing dictionary of input tensors
 
         Returns:
             Predictions tensor of shape (batch_size, output_dim)
         """
 
-        data = batch["data"].to(self.device)
-        predictions = self.model.forward(data)
+        inputs = {k: v.to(self.device) for k, v in batch["inputs"].items()}
+        predictions = self.model(**inputs)
         return predictions
 
     def predict(self, dataloader: DataLoader) -> torch.Tensor:
@@ -288,7 +288,7 @@ class Trainer:
         Evaluate one batch (forward pass and loss computation).
 
         Args:
-            batch: Batch dictionary with "data" and "target" keys
+            batch: Batch dictionary with "input" and "target" keys
 
         Returns:
             Tuple of (predictions, targets, loss) torch Tensors
@@ -376,12 +376,12 @@ class Trainer:
         logger.info(f"Test loss: {avg_loss}")
         return avg_loss
 
-    def _train_step(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+    def _train_step(self, batch: dict[str, dict[str, torch.Tensor]]) -> torch.Tensor:
         """
         Perform training step for one batch: forward, backward, optimizer step.
 
         Args:
-            batch: Batch dictionary with keys: "data", "target"
+            batch: Batch dictionary with keys: "inputs", "target"
 
         Returns:
             Loss tensor (scalar) for this batch
@@ -512,18 +512,18 @@ class Trainer:
     @if_logging
     def save_model_mlflow(self, suffix: str, dataloader: DataLoader) -> None:
         """
-        Save model as MLflow artifact.
-
-        Saves PyTorch model to MLflow with input example from dataloader.
+        Save MLflow-compatible model as artifact. MLflow models expects a DataFrame as input instead of dict.
 
         Args:
             suffix: Suffix of model file (without .pt extension)
             dataloader: Data loader to use for input example (takes first sample)
         """
         suffix = str(suffix)
-        input_example = dataloader.dataset[0]["data"].cpu().numpy()
         model_name = f"{self.model.config.model_name}-{suffix}"
-        mlflow.pytorch.log_model(self.model.cpu(), name=model_name, input_example=input_example)
+
+        signature = dataloader.dataset.signature
+
+        mlflow.pytorch.log_model(self.model.cpu(), name=model_name, signature=signature)
         self.model.to(self.device)
 
     @if_logging

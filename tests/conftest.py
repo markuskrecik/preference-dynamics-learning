@@ -318,10 +318,8 @@ def trainer_checkpoint_env(
             data = torch.randn(self.in_channels, self.seq_len)
             target = torch.zeros(self.output_dim)
             return {
-                "data": data,
+                "inputs": {"x": data},
                 "target": target,
-                "sequence_length": self.seq_len,
-                "sample_id": idx,
             }
 
     checkpoint_dir = tmp_path_factory.mktemp("trainer_checkpoints")

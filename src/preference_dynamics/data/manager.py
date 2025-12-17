@@ -245,7 +245,7 @@ class DataManager:
             num_workers = self.config.num_workers
 
         for split_name, samples in self._splits.items():
-            dataset = TimeSeriesDataset(samples)
+            dataset = TimeSeriesDataset(samples, self.config.adapter)
             self._dataloaders[split_name] = DataLoader(
                 dataset,
                 batch_size=self.config.batch_size,
@@ -304,3 +304,15 @@ class DataManager:
         if self._dataloaders.get("train") is None:
             raise RuntimeError("Data loaders not initialized. Call setup() first.")
         return self._dataloaders.get("test")
+
+    @property
+    def n_inputs(self) -> int:
+        """Get number of inputs."""
+        sample = self.splits["train"][0]
+        return self.config.adapter.n_inputs(sample)  # type: ignore
+
+    @property
+    def n_outputs(self) -> int:
+        """Get number of outputs."""
+        sample = self.splits["train"][0]
+        return self.config.adapter.n_outputs(sample)  # type: ignore

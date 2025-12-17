@@ -2,9 +2,11 @@
 PyTorch Dataset classes for preference dynamics time series.
 """
 
+import mlflow
 import torch
 from torch.utils.data import Dataset
 
+from preference_dynamics.data.adapters import ModelAdapter
 from preference_dynamics.schemas import TimeSeriesSample
 
 
@@ -13,12 +15,13 @@ class TimeSeriesDataset(Dataset):  # type: ignore
     PyTorch Dataset for preference dynamics time series.
     """
 
-    def __init__(self, samples: list[TimeSeriesSample]) -> None:
+    def __init__(self, samples: list[TimeSeriesSample], adapter: ModelAdapter) -> None:
         """
         Initialize dataset from list of samples.
 
         Args:
             samples: List of TimeSeriesSample objects (must all have same n_actions)
+            adapter: ModelAdapter to use for converting samples to model inputs and targets
 
         Raises:
             ValueError: If samples list is empty or has inconsistent n_actions
@@ -34,14 +37,15 @@ class TimeSeriesDataset(Dataset):  # type: ignore
                     f"expected {n_actions}"
                 )
 
-        self.samples = samples
         self.n_actions = n_actions
+        self.samples = samples
+        self.adapter = adapter
 
     def __len__(self) -> int:
         """Return number of samples in dataset."""
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor | int | str]:
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
         """
         Get a single sample from the dataset.
 
@@ -50,21 +54,20 @@ class TimeSeriesDataset(Dataset):  # type: ignore
 
         Returns:
             Dictionary with keys:
-                - data: torch.Tensor of shape (2n, T) - variable length time series
-                - target: torch.Tensor of shape (2n + 2n²,) - ground truth parameters
-                - sequence_length: int - original sequence length (before padding)
-                - sample_id: str - unique identifier
+                - input: dict[str, torch.Tensor] - model input
+                - target: torch.Tensor - model target
         """
         sample = self.samples[idx]
 
-        time_series = torch.from_numpy(sample.time_series.copy()).float()
-        parameters = torch.from_numpy(sample.parameters.values.copy()).float()
-        sequence_length = sample.sequence_length
-        sample_id = sample.sample_id
+        return self.adapter(sample)
 
-        return {
-            "data": time_series,
-            "target": parameters,
-            "sequence_length": sequence_length,
-            "sample_id": sample_id,
-        }
+    @property
+    def signature(self) -> mlflow.models.ModelSignature:
+        """
+        Get MLflow signature for a sample.
+        """
+
+        sample = self.__getitem__(0)
+        inputs = {k: v.cpu().numpy() for k, v in sample["inputs"].items()}
+        target = sample["target"].cpu().numpy()  # type: ignore
+        return mlflow.models.infer_signature(inputs, target)

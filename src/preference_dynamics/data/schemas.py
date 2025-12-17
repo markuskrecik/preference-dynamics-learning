@@ -6,6 +6,7 @@ from typing import Any, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from preference_dynamics.data.adapters import CNN1DParamAdapter
 from preference_dynamics.data.io_handler import JSONHandler
 
 
@@ -21,6 +22,10 @@ class DataConfig(BaseModel):
     transformers: list[Any] = Field(
         default_factory=list,
         description="List of Transformer instances to apply to the data (default: [])",
+    )
+    adapter: Any = Field(
+        default_factory=CNN1DParamAdapter,
+        description="ModelAdapter instance for converting samples to model inputs and targets (default: CNN1DParamAdapter)",
     )
     load_if_exists: bool = Field(
         default=True, description="Whether to load processed data if available (default: True)"
