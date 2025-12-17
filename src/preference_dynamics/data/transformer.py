@@ -105,6 +105,42 @@ class SampleGroupNormalizer:
         return samples
 
 
+class SampleGroupStdNormalizer:
+    """
+    Transformer which normalizes only by std for each sample for each variable group (desires, efforts) independently.
+
+    Normalizes only by std (without subtracting mean) across desire and effort channels separately.
+    This preserves the zero point of the original time series while scaling std to 1.
+    Updates sample.time_series in-place and sets sample.statistics with means=0.
+    """
+
+    pre_split: bool = False
+
+    def transform(self, samples: Sequence[TimeSeriesSample]) -> Sequence[TimeSeriesSample]:
+        for s in samples:
+            n = s.n_actions
+            means = []
+            stds = []
+            X_norms = []
+            for X in [s.desires, s.efforts]:
+                std = X.std(axis=(0, 1), keepdims=True)
+                X_norm = X / (std + 1e-8)
+                means.append(np.zeros(n))  # zero means since we don't subtract
+                stds.append(std.repeat(n))
+                X_norms.append(X_norm)
+
+            statistics = SampleStatistics(
+                method="sample_group_std_normalization",
+                means=np.concatenate(means),
+                stds=np.concatenate(stds),
+            )
+
+            s.time_series = np.concatenate(X_norms)
+            s.statistics = statistics
+
+        return samples
+
+
 class InitialValueFeature:
     """
     Transformer which extracts the first time step values (time_series[:, 0]).
