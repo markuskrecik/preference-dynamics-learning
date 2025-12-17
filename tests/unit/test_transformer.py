@@ -14,6 +14,7 @@ from preference_dynamics.data.transformer import (
     InitialValueFeature,
     PeaksFeature,
     SampleGroupNormalizer,
+    SampleGroupStdNormalizer,
     SampleNormalizer,
     ShortenTimeSeriesTransformer,
     SteadyStateFeature,
@@ -57,7 +58,7 @@ def test_delete_sample_transformer_out_of_range(random_time_series_n3: TimeSerie
 
 @pytest.mark.parametrize(
     "transformer_cls",
-    [SampleNormalizer, SampleGroupNormalizer],
+    [SampleNormalizer, SampleGroupNormalizer, SampleGroupStdNormalizer],
 )
 def test_normalizers_apply_statistics_and_keep_metadata(
     transformer_cls: type[DataTransformer],
@@ -96,6 +97,65 @@ def test_sample_group_normalizer_handles_constant_groups(
     normalized = SampleGroupNormalizer().transform([constant])[0]
     assert np.allclose(normalized.desires, 0.0, atol=1e-8)
     assert np.allclose(normalized.efforts, 0.0, atol=1e-8)
+
+
+def test_sample_group_std_normalizer_preserves_zero_point(
+    random_time_series_n3: TimeSeriesSample,
+) -> None:
+    """Test that SampleGroupStdNormalizer preserves zero point (doesn't subtract mean)."""
+    transformer = SampleGroupStdNormalizer()
+    ts = random_time_series_n3.model_copy()
+    ts.time_series[:, :10] = 0.0
+    samples = [ts]
+    original_desires = samples[0].desires.copy()
+    original_efforts = samples[0].efforts.copy()
+
+    result = transformer.transform(samples)
+    normalized = result[0]
+
+    zero_mask_desires = original_desires == 0.0
+    zero_mask_efforts = original_efforts == 0.0
+    if np.any(zero_mask_desires):
+        assert np.allclose(normalized.desires[zero_mask_desires], 0.0, atol=1e-8)
+    if np.any(zero_mask_efforts):
+        assert np.allclose(normalized.efforts[zero_mask_efforts], 0.0, atol=1e-8)
+
+    assert np.allclose(normalized.statistics.means, 0.0, atol=1e-8)
+
+
+def test_sample_group_std_normalizer_normalizes_std_to_one(
+    random_time_series_n3: TimeSeriesSample,
+) -> None:
+    """Test that SampleGroupStdNormalizer normalizes std to approximately 1."""
+    transformer = SampleGroupStdNormalizer()
+    samples = [random_time_series_n3.model_copy()]
+
+    result = transformer.transform(samples)
+    normalized = result[0]
+
+    desires_std = normalized.desires.std(axis=(0, 1))
+    efforts_std = normalized.efforts.std(axis=(0, 1))
+    assert np.allclose(desires_std, 1.0, atol=1e-6)
+    assert np.allclose(efforts_std, 1.0, atol=1e-6)
+
+
+def test_sample_group_std_normalizer_handles_constant_groups(
+    random_time_series_n3: TimeSeriesSample,
+) -> None:
+    """Test that SampleGroupStdNormalizer handles constant series (std=0)."""
+    desires = np.full_like(random_time_series_n3.desires, 2.0)
+    efforts = np.full_like(random_time_series_n3.efforts, 3.0)
+    constant = random_time_series_n3.model_copy(
+        update={"time_series": np.concatenate([desires, efforts])}
+    )
+    normalized = SampleGroupStdNormalizer().transform([constant])[0]
+
+    # With std=0, division by (std + 1e-8) should preserve the constant value scaled
+    # The constant values should be preserved (scaled by 1/(1e-8) = 1e8)
+    assert np.allclose(normalized.desires, 2.0 / 1e-8, atol=1e-6)
+    assert np.allclose(normalized.efforts, 3.0 / 1e-8, atol=1e-6)
+
+    assert np.allclose(normalized.statistics.means, 0.0, atol=1e-8)
 
 
 def test_steady_state_feature_detects_steady_state(
