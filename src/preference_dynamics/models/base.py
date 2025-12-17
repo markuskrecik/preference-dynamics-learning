@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 
 from torch import nn
 
-from preference_dynamics.schemas import ModelConfig
+from preference_dynamics.models.schemas import ModelConfig
 
 
 class PredictorModel(nn.Module, ABC):  # type: ignore

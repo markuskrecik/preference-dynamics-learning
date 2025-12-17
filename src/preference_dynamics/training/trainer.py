@@ -16,10 +16,8 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from preference_dynamics.models import CNN1DFeatPredictor, CNN1DPredictor, PredictorModel
+from preference_dynamics.models import MODEL_REGISTRY, PredictorModel
 from preference_dynamics.schemas import (
-    CNN1DConfig,
-    CNN1DFeatConfig,
     TrainerConfig,
     TrainingHistory,
 )
@@ -31,12 +29,6 @@ from preference_dynamics.utils import (
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-MODEL_TYPE_MAPPING = {
-    "cnn1d": (CNN1DConfig, CNN1DPredictor),
-    "cnn1d_feat": (CNN1DFeatConfig, CNN1DFeatPredictor),
-}
 
 
 class Trainer:
@@ -637,7 +629,7 @@ class Trainer:
 
         # Restore model
         model_config_dump = checkpoint["model_config"]
-        config_cls, model_cls = MODEL_TYPE_MAPPING[model_config_dump["model_type"]]
+        config_cls, model_cls = MODEL_REGISTRY[model_config_dump["model_type"]]
 
         model_config = config_cls.model_validate(model_config_dump)
         self.model = model_cls(config=model_config)
@@ -688,7 +680,7 @@ class Trainer:
         checkpoint = torch.load(checkpoint_path, weights_only=False)
 
         model_config_dump = checkpoint["model_config"]
-        config_cls, model_cls = MODEL_TYPE_MAPPING[model_config_dump["model_type"]]
+        config_cls, model_cls = MODEL_REGISTRY[model_config_dump["model_type"]]
 
         model_config = config_cls.model_validate(model_config_dump)
         model = model_cls(config=model_config)

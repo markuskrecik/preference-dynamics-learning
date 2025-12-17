@@ -14,11 +14,8 @@ from optuna.trial import FixedTrial, FrozenTrial, Trial
 
 from preference_dynamics.data.schemas import DataConfig
 from preference_dynamics.experiments.experiment import Experiment
-from preference_dynamics.schemas import (
-    ModelConfig,
-    RunnerConfig,
-    TrainerConfig,
-)
+from preference_dynamics.models import ModelConfig
+from preference_dynamics.schemas import RunnerConfig, TrainerConfig
 from preference_dynamics.utils import (
     TrialLike,
     add_prefix,
@@ -52,8 +49,9 @@ class ExperimentRunner:
         ```python
         from preference_dynamics.experiments import ExperimentRunner
         from preference_dynamics.schemas import (
-            RunnerConfig, DataConfig, CNN1DConfig, TrainerConfig
+            RunnerConfig, DataConfig, TrainerConfig
         )
+        from preference_dynamics.models import CNN1DConfig
 
         # Create configurations
         runner_config = RunnerConfig(

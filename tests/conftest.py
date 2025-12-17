@@ -15,10 +15,9 @@ from torch.utils.data import DataLoader, Dataset
 
 from preference_dynamics.models.base import PredictorModel
 from preference_dynamics.models.cnn1d import CNN1DPredictor
+from preference_dynamics.models.schemas import CNN1DConfig, ModelConfig
 from preference_dynamics.schemas import (
-    CNN1DConfig,
     ICVector,
-    ModelConfig,
     ODEConfig,
     ODESolverConfig,
     ParameterVector,

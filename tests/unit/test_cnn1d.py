@@ -8,8 +8,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 
-from preference_dynamics.models.cnn1d import CNN1DPredictor
-from preference_dynamics.schemas import CNN1DConfig
+from preference_dynamics.models import CNN1DConfig, CNN1DPredictor
 
 
 @pytest.mark.parametrize(

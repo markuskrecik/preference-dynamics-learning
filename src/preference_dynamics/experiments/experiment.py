@@ -9,12 +9,9 @@ import mlflow
 
 from preference_dynamics.data.manager import DataManager
 from preference_dynamics.data.schemas import DataConfig
-from preference_dynamics.models.base import PredictorModel
-from preference_dynamics.schemas import (
-    ModelConfig,
-    TrainerConfig,
-)
-from preference_dynamics.training.trainer import MODEL_TYPE_MAPPING, Trainer
+from preference_dynamics.models import MODEL_REGISTRY, ModelConfig, PredictorModel
+from preference_dynamics.schemas import TrainerConfig
+from preference_dynamics.training.trainer import Trainer
 from preference_dynamics.utils import if_logging
 
 
@@ -52,10 +49,10 @@ class Experiment:
         Raises:
             ValueError: If model type is not supported
         """
-        if self.model_config.model_type not in MODEL_TYPE_MAPPING:
+        if self.model_config.model_type not in MODEL_REGISTRY:
             raise ValueError(f"Model type {self.model_config.model_type} not supported")
-        _, model_cls = MODEL_TYPE_MAPPING[self.model_config.model_type]
-        return model_cls(config=self.model_config)  # type: ignore
+        _, model_cls = MODEL_REGISTRY[self.model_config.model_type]
+        return model_cls(config=self.model_config)
 
     def load_checkpoint(self, checkpoint_path: str | Path) -> Self:
         """

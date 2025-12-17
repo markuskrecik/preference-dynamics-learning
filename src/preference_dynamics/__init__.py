@@ -19,8 +19,9 @@ Main components:
 from preference_dynamics.data.manager import DataManager
 from preference_dynamics.data.schemas import DataConfig
 from preference_dynamics.experiments.runner import ExperimentRunner
+from preference_dynamics.models import CNN1DConfig
 from preference_dynamics.models.cnn1d import CNN1DPredictor
-from preference_dynamics.schemas import CNN1DConfig, RunnerConfig, TrainerConfig
+from preference_dynamics.schemas import RunnerConfig, TrainerConfig
 from preference_dynamics.training.trainer import Trainer
 
 __version__ = "0.1.0"

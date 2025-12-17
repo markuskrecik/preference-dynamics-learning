@@ -8,7 +8,7 @@ import torch
 from torch import nn
 
 from preference_dynamics.models.base import PredictorModel
-from preference_dynamics.schemas import CNN1DFeatConfig
+from preference_dynamics.models.schemas import CNN1DFeatConfig
 
 
 class CNN1DFeatPredictor(PredictorModel):

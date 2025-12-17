@@ -10,7 +10,8 @@ from pydantic import ValidationError
 
 from preference_dynamics.data.schemas import DataConfig
 from preference_dynamics.experiments.runner import ExperimentRunner
-from preference_dynamics.schemas import CNN1DConfig, RunnerConfig, TrainerConfig
+from preference_dynamics.models import CNN1DConfig
+from preference_dynamics.schemas import RunnerConfig, TrainerConfig
 
 
 def test_runner_config_validation_defaults() -> None:

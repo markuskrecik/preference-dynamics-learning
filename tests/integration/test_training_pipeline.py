@@ -23,8 +23,8 @@ from preference_dynamics.data.manager import DataManager
 from preference_dynamics.data.schemas import DataConfig
 from preference_dynamics.experiments.experiment import Experiment
 from preference_dynamics.experiments.runner import ExperimentRunner
+from preference_dynamics.models import CNN1DConfig
 from preference_dynamics.schemas import (
-    CNN1DConfig,
     ICVector,
     ODEConfig,
     ODESolverConfig,
