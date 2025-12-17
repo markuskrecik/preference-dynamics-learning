@@ -16,10 +16,10 @@ from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from preference_dynamics.models.base import PredictorModel
-from preference_dynamics.models.cnn1d import CNN1DPredictor
+from preference_dynamics.models import CNN1DFeatPredictor, CNN1DPredictor, PredictorModel
 from preference_dynamics.schemas import (
     CNN1DConfig,
+    CNN1DFeatConfig,
     TrainerConfig,
     TrainingHistory,
 )
@@ -35,6 +35,7 @@ logger.setLevel(logging.INFO)
 
 MODEL_TYPE_MAPPING = {
     "cnn1d": (CNN1DConfig, CNN1DPredictor),
+    "cnn1d_feat": (CNN1DFeatConfig, CNN1DFeatPredictor),
 }
 
 
@@ -106,7 +107,7 @@ class Trainer:
         self.best_loss = float("inf")
 
         self.device = self._init_device(config.device)
-        self.model = self._init_model(model)
+        self.model = model
         self.optimizer = self._init_optimizer()
         self.criterion = self._init_loss_function(config.loss_function)
 
@@ -130,7 +131,7 @@ class Trainer:
             weight_decay=self.config.weight_decay,
         )
 
-    def _init_model(self, model: PredictorModel) -> PredictorModel:
+    def _init_model(self, model: PredictorModel, dataloader: DataLoader) -> PredictorModel:
         """
         Initialize model with a forward pass to trigger lazy initialization.
 
@@ -146,16 +147,12 @@ class Trainer:
         Raises:
             NotImplementedError: If model type is not supported
         """
-        if isinstance(model.config, CNN1DConfig):
-            kernels = model.config.kernel_sizes
-            min_input_len = 2 ** len(kernels) + sum(k * 2**i for i, k in enumerate(kernels))
-        else:
-            raise NotImplementedError(f"Model type {type(model.config)} not supported")
 
         model.to(self.device)
         with torch.no_grad():
-            input = torch.ones(1, model.config.in_channels, min_input_len).to(self.device)
-            model.forward(input)
+            inputs = dataloader.dataset[0]["inputs"]
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            model.forward(**inputs)
 
         if_logging(mlflow.log_param)("model_n_parameters", model.n_parameters)
 
@@ -438,6 +435,7 @@ class Trainer:
         val_losses = []
         epoch_times = []
         best_epoch = self.current_epoch
+        self.model = self._init_model(self.model, train_dataloader)
 
         logger.info(
             f"Starting training for {self.config.num_epochs} epochs with run_id={self.run_id}"

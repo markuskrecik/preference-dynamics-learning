@@ -13,8 +13,10 @@ All models implement the PredictorModel protocol for unified training interface.
 
 from preference_dynamics.models.base import PredictorModel
 from preference_dynamics.models.cnn1d import CNN1DPredictor
+from preference_dynamics.models.cnn1d_feat import CNN1DFeatPredictor
 
 __all__ = [
     "CNN1DPredictor",
+    "CNN1DFeatPredictor",
     "PredictorModel",
 ]

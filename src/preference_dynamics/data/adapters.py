@@ -96,3 +96,51 @@ class CNN1DParamICForecastAdapter:
 
     def n_outputs(self, sample: TimeSeriesSample) -> int:
         return int(self.target(sample).shape[0])
+
+
+class CNN1DFeatParamICForecastAdapter:
+    """
+    Adapter for CNN1D with features parameter and initial conditions and forecast values prediction.
+    Compatible with `model.forward(x, x_feat)`.
+    """
+
+    feature_names = ["is_steady_state", "steady_state_mean"]
+
+    def inputs(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
+        def flatten_nested_lists(values: Any) -> list[Any]:
+            flat = []
+            for v in values:
+                if isinstance(v, list):
+                    flat.extend(flatten_nested_lists(v))
+                else:
+                    flat.append(v)
+            return flat
+
+        x = torch.from_numpy(sample.time_series.copy()).float()
+        feat_lst: list[Any] = flatten_nested_lists(
+            [sample.features[name] for name in self.feature_names]
+        )
+        features = np.array([np.nan if v is None else v for v in feat_lst], dtype=float)
+
+        x_feat = torch.from_numpy(features).float().flatten()
+        return {"x": x, "x_feat": x_feat}
+
+    def target(self, sample: TimeSeriesSample) -> torch.Tensor:
+        parameters = torch.from_numpy(sample.parameters.values.copy()).float()
+        initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
+        forecast_values = torch.from_numpy(np.array(sample.features["forecast_values"])).float()
+        forecast_values = forecast_values.flatten()
+        target = torch.cat([parameters, initial_conditions, forecast_values], dim=0)
+
+        return target
+
+    def __call__(
+        self, sample: TimeSeriesSample
+    ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
+        return {"inputs": self.inputs(sample), "target": self.target(sample)}
+
+    def n_inputs(self, sample: TimeSeriesSample) -> int:
+        return int(self.inputs(sample)["x"].shape[0])
+
+    def n_outputs(self, sample: TimeSeriesSample) -> int:
+        return int(self.target(sample).shape[0])

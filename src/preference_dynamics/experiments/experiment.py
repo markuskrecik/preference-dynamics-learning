@@ -10,13 +10,11 @@ import mlflow
 from preference_dynamics.data.manager import DataManager
 from preference_dynamics.data.schemas import DataConfig
 from preference_dynamics.models.base import PredictorModel
-from preference_dynamics.models.cnn1d import CNN1DPredictor
 from preference_dynamics.schemas import (
-    CNN1DConfig,
     ModelConfig,
     TrainerConfig,
 )
-from preference_dynamics.training.trainer import Trainer
+from preference_dynamics.training.trainer import MODEL_TYPE_MAPPING, Trainer
 from preference_dynamics.utils import if_logging
 
 
@@ -54,10 +52,10 @@ class Experiment:
         Raises:
             ValueError: If model type is not supported
         """
-        if isinstance(self.model_config, CNN1DConfig):
-            return CNN1DPredictor(config=self.model_config)
-        else:
-            raise ValueError("Model not supported")
+        if self.model_config.model_type not in MODEL_TYPE_MAPPING:
+            raise ValueError(f"Model type {self.model_config.model_type} not supported")
+        _, model_cls = MODEL_TYPE_MAPPING[self.model_config.model_type]
+        return model_cls(config=self.model_config)  # type: ignore
 
     def load_checkpoint(self, checkpoint_path: str | Path) -> Self:
         """
