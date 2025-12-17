@@ -15,6 +15,7 @@ from preference_dynamics.data.transformer import (
     PeaksFeature,
     SampleGroupNormalizer,
     SampleNormalizer,
+    ShortenTimeSeriesTransformer,
     SteadyStateFeature,
 )
 from preference_dynamics.schemas import TimeSeriesSample
@@ -208,3 +209,56 @@ def test_cycles_feature_detects_limit_cycle(
     )
     np.testing.assert_array_equal(transformed.features["limit_cycle_diffs"], [[7, 7], [7, 7]])
     np.testing.assert_array_almost_equal(transformed.features["limit_cycle_mean_diff"], [7.0, 7.0])
+
+
+class TestShortenTimeSeriesTransformer:
+    """Test suite for ShortenTimeSeriesTransformer."""
+
+    @pytest.mark.parametrize("n_steps", [1, 2, 5])
+    def test_shortens_time_series_by_n_steps(
+        self, n_steps: int, make_time_series_sample: Callable[..., TimeSeriesSample]
+    ) -> None:
+        """Test transformer shortens time series and extracts forecast values correctly."""
+        n_channels = 4
+        original_length = 20
+        time_series = np.random.randn(n_channels, original_length)
+        time_points = np.linspace(0.0, original_length - 1, original_length)
+        sample = make_time_series_sample(time_series, time_points=time_points, n_actions=2)
+
+        transformer = ShortenTimeSeriesTransformer(n_steps=n_steps)
+        transformed = transformer.transform([sample])[0]
+
+        expected_length = original_length - n_steps
+        assert transformed.time_series.shape == (n_channels, expected_length)
+        assert len(transformed.time_points) == expected_length
+        assert transformed.config.solver.n_time_points == expected_length
+        assert transformed.config.solver.time_span[1] == transformed.time_points[-1]
+
+        forecast_values = np.array(transformed.features["forecast_values"])
+        assert forecast_values.shape == (n_channels, n_steps)
+        np.testing.assert_array_equal(forecast_values, time_series[:, -n_steps:])
+
+        TimeSeriesSample.model_validate(transformed)
+
+    def test_multiple_samples(
+        self, make_time_series_sample: Callable[..., TimeSeriesSample]
+    ) -> None:
+        """Test transformer handles multiple samples correctly."""
+        samples = [make_time_series_sample(np.random.randn(4, 20), n_actions=2) for _ in range(3)]
+
+        transformer = ShortenTimeSeriesTransformer(n_steps=2)
+        transformed = transformer.transform(samples)
+
+        assert len(transformed) == 3
+        for s in transformed:
+            assert s.time_series.shape[1] == 18
+            assert len(s.time_points) == 18
+            forecast_values = np.array(s.features["forecast_values"])
+            assert forecast_values.shape == (4, 2)
+            TimeSeriesSample.model_validate(s)
+
+    @pytest.mark.parametrize("n_steps", [0, -1])
+    def test_raises_on_invalid_n_steps(self, n_steps: int) -> None:
+        """Test transformer raises ValueError for invalid n_steps."""
+        with pytest.raises(ValueError, match="n_steps must be positive"):
+            ShortenTimeSeriesTransformer(n_steps=n_steps)

@@ -5,6 +5,7 @@ Ingested by torch.utils.data.Dataset.
 
 from typing import Any, Protocol
 
+import numpy as np
 import torch
 
 from preference_dynamics.schemas import TimeSeriesSample
@@ -64,3 +65,34 @@ class CNN1DParamICAdapter:
 
     def n_outputs(self, sample: TimeSeriesSample) -> int:
         return int(sample.parameters.values.shape[0] + sample.initial_conditions.values.shape[0])
+
+
+class CNN1DParamICForecastAdapter:
+    """
+    Adapter for CNN1D parameter and initial conditions and forecast values prediction.
+    Compatible with `model.forward(x)`.
+    """
+
+    def inputs(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
+        x = torch.from_numpy(sample.time_series.copy()).float()
+        return {"x": x}
+
+    def target(self, sample: TimeSeriesSample) -> torch.Tensor:
+        parameters = torch.from_numpy(sample.parameters.values.copy()).float()
+        initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
+        forecast_values = torch.from_numpy(np.array(sample.features["forecast_values"])).float()
+        forecast_values = forecast_values.flatten()
+        target = torch.cat([parameters, initial_conditions, forecast_values], dim=0)
+
+        return target
+
+    def __call__(
+        self, sample: TimeSeriesSample
+    ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
+        return {"inputs": self.inputs(sample), "target": self.target(sample)}
+
+    def n_inputs(self, sample: TimeSeriesSample) -> int:
+        return int(self.inputs(sample)["x"].shape[0])
+
+    def n_outputs(self, sample: TimeSeriesSample) -> int:
+        return int(self.target(sample).shape[0])

@@ -494,3 +494,29 @@ class CyclesFeature:
             s.features["limit_cycle_mean_diff"] = diffs_limit_cycle_mean
 
         return samples
+
+
+class ShortenTimeSeriesTransformer:
+    """
+    Transformer which shortens the time series by `n_steps` time steps for forecasting.
+    The last `n_steps` time step values are extracted for forecasting.
+
+    Args:
+        n_steps: number of time steps to shorten the time series by (default: 1)
+    """
+
+    pre_split: bool = False
+
+    def __init__(self, n_steps: int = 1):
+        if n_steps <= 0:
+            raise ValueError("n_steps must be positive.")
+        self.n_steps = n_steps
+
+    def transform(self, samples: Sequence[TimeSeriesSample]) -> Sequence[TimeSeriesSample]:
+        for s in samples:
+            s.time_series, forecast_values = np.split(s.time_series, [-self.n_steps], axis=1)
+            s.time_points = s.time_points[: -self.n_steps]
+            s.config.solver.n_time_points = len(s.time_points)
+            s.config.solver.time_span = (s.config.solver.time_span[0], s.time_points[-1])
+            s.features["forecast_values"] = forecast_values.tolist()
+        return samples
