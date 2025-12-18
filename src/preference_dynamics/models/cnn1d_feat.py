@@ -27,20 +27,25 @@ class CNN1DFeatPredictor(PredictorModel):
 
         self._config = config
 
+        # self.steady_state_offset = nn.Parameter(torch.zeros(config.in_channels, 1))
+        in_channels = config.in_channels
+
         self.conv_blocks = nn.ModuleList()
         for out_channels, kernel_size in zip(config.filters, config.kernel_sizes, strict=True):
             conv_block = nn.Sequential(
-                nn.LazyConv1d(
+                nn.Conv1d(
+                    in_channels=in_channels,
                     out_channels=out_channels,
                     kernel_size=kernel_size,
                     padding="same",
                 ),
                 # nn.BatchNorm1d(out_channels),
-                nn.LeakyReLU(inplace=True),
+                nn.ReLU(inplace=True),
                 nn.MaxPool1d(2),
                 # nn.Dropout1d(config.dropout),
             )
             self.conv_blocks.append(conv_block)
+            in_channels = out_channels
 
         self.global_pool = nn.Sequential(
             nn.AdaptiveAvgPool1d(1),
@@ -52,11 +57,12 @@ class CNN1DFeatPredictor(PredictorModel):
             fc_layer = nn.Sequential(
                 nn.LazyLinear(feature_dim),
                 nn.LeakyReLU(inplace=True),
-                nn.Dropout(config.dropout),
+                # nn.Dropout(config.dropout),
             )
             self.fc_layers.append(fc_layer)
 
     def forward(self, x: torch.Tensor, x_feat: torch.Tensor) -> torch.Tensor:
+        # x = x - self.steady_state_offset
         for conv_block in self.conv_blocks:
             x = conv_block(x)  # (batch, filters, time)
         x = self.global_pool(x)  # (batch, filters, 1)
