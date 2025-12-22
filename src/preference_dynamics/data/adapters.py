@@ -144,3 +144,33 @@ class CNN1DFeatParamICForecastAdapter:
 
     def n_outputs(self, sample: TimeSeriesSample) -> int:
         return int(self.target(sample).shape[0])
+
+
+class InversePINNAdapter:
+    """
+    Adapter for inverse PINN model that maps trajectories to parameter and initial condition estimates.
+
+    Inputs:
+        - trajectory: Observed time series [u, a] of shape (2n, T)
+        - time_grid: Time points of shape (T,)
+
+    Targets:
+        - parameter_ic: Concatenated parameter vector and initial conditions of shape (2n + 2n² + 2n,)
+    """
+
+    def __call__(
+        self, sample: TimeSeriesSample
+    ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
+        x = torch.from_numpy(sample.time_series.copy()).float()
+        time_grid = torch.from_numpy(sample.time_points.copy()).float()
+        parameters = torch.from_numpy(sample.parameters.values.copy()).float()
+        initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
+        target = torch.cat([parameters, initial_conditions], dim=0)
+
+        return {"inputs": {"x": x, "t": time_grid}, "target": target}
+
+    def n_inputs(self, sample: TimeSeriesSample) -> int:
+        return int(sample.time_series.shape[0])
+
+    def n_outputs(self, sample: TimeSeriesSample) -> int:
+        return int(sample.parameters.values.shape[0] + sample.initial_conditions.values.shape[0])

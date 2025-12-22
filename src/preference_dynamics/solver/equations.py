@@ -21,7 +21,7 @@ import numpy as np
 from numpydantic import NDArray
 
 from preference_dynamics.schemas import ParameterVector
-from preference_dynamics.utils import get_subsets
+from preference_dynamics.utils import get_diagonal_indices, get_subsets
 
 
 def preference_dynamics_rhs(
@@ -266,3 +266,62 @@ def compute_equilibria(
     """
 
     return _compute_equilibria_general(parameters, debug)
+
+
+def transform_parameters_unconstrained_to_constrained(
+    unconstrained_params: NDArray[Literal["4-*"], float],
+    n_actions: int,
+) -> NDArray[Literal["4-*"], float]:
+    """
+    Transform unconstrained parameter vector to constrained (enforcing diagonal positivity).
+
+    Maps unconstrained parameters φ to valid ParameterVector by enforcing:
+        - Π[i,i] > 0 for all i
+        - Γ[i,i] > 0 for all i
+
+    Uses softplus transform: constrained = softplus(unconstrained) + epsilon
+    for diagonal elements to ensure strict positivity.
+
+    Args:
+        unconstrained_params: Unconstrained parameter vector of shape (2n + 2n²,)
+        n_actions: Number of actions (n)
+
+    Returns:
+        Constrained parameter vector of shape (2n + 2n²,) with diagonal positivity enforced
+    """
+    constrained = unconstrained_params.copy()
+    diagonal_indices = get_diagonal_indices(n_actions)
+
+    for idx in diagonal_indices:
+        constrained[idx] = np.log1p(np.exp(unconstrained_params[idx]))
+
+    return constrained
+
+
+def transform_parameters_constrained_to_unconstrained(
+    constrained_params: NDArray[Literal["4-*"], float],
+    n_actions: int,
+) -> NDArray[Literal["4-*"], float]:
+    """
+    Transform constrained parameter vector to unconstrained (inverse of transform).
+
+    Maps constrained parameters back to unconstrained space by inverting softplus:
+        unconstrained = log(exp(constrained - epsilon) - 1)
+
+    Args:
+        constrained_params: Constrained parameter vector of shape (2n + 2n²,)
+        n_actions: Number of actions (n)
+
+    Returns:
+        Unconstrained parameter vector of shape (2n + 2n²,)
+    """
+    unconstrained = constrained_params.copy()
+    diagonal_indices = get_diagonal_indices(n_actions)
+
+    for idx in diagonal_indices:
+        if constrained_params[idx] <= 0:
+            unconstrained[idx] = -10.0
+        else:
+            unconstrained[idx] = np.log(np.expm1(constrained_params[idx]))
+
+    return unconstrained

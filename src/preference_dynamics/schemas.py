@@ -647,3 +647,128 @@ class ParameterNormalizer(BaseModel):
     ) -> NDArray[Literal["4-*"], float]:
         """Convert back from [0, 1]."""
         return params_normalized * (self.max - self.min + 1e-8) + self.min
+
+
+# ============================================================================
+# Inverse PINN Configuration
+# ============================================================================
+
+
+class CollocationConfig(BaseModel):
+    """
+    Configuration for collocation strategy (where physics residual is evaluated).
+
+    Fields:
+        strategy: Collocation strategy ("observed_times", "uniform", "random")
+        n_collocation_points: Number of additional collocation points (if strategy != "observed_times")
+    """
+
+    strategy: Literal["observed_times", "uniform", "random"] = Field(
+        default="observed_times", description="Collocation strategy"
+    )
+    n_collocation_points: int | None = Field(
+        default=None,
+        ge=1,
+        description="Number of additional collocation points (required if strategy != 'observed_times')",
+    )
+
+    @model_validator(mode="after")
+    def validate_collocation_points(self) -> Self:
+        """Validate that n_collocation_points is provided when needed."""
+        if self.strategy != "observed_times" and self.n_collocation_points is None:
+            raise ValueError(
+                f"n_collocation_points must be provided when strategy is '{self.strategy}'"
+            )
+        return self
+
+
+class LossScheduleConfig(BaseModel):
+    """
+    Configuration for loss scheduling (e.g., warm-up).
+
+    Fields:
+        warmup_epochs: Number of epochs to warm up (data-only, then add physics)
+        warmup_physics_weight: Physics weight during warmup (default: 0.0)
+    """
+
+    warmup_epochs: int = Field(default=0, ge=0, description="Number of warmup epochs")
+    warmup_physics_weight: float = Field(
+        default=0.0, ge=0.0, description="Physics weight during warmup"
+    )
+
+
+class InversePINNConfig(BaseModel):
+    """
+    Configuration for inverse PINN training objective and physics settings.
+
+    Fields:
+        physics_weight: Relative weight for physics residual term
+        data_weight: Relative weight for observation fit term
+        supervised_weight: Weight for supervised parameter/IC terms (labels exist)
+        collocation: Collocation strategy configuration
+        non_smooth_observables: Whether to use exact piecewise observation mapping or smooth approximation
+        smoothness_temperature: Temperature parameter for smooth approximations
+        loss_schedule: Optional warm-up configuration
+    """
+
+    physics_weight: float = Field(..., ge=0.0, description="Weight for physics residual term")
+    data_weight: float = Field(..., ge=0.0, description="Weight for observation fit term")
+    supervised_weight: float = Field(
+        default=0.0, ge=0.0, description="Weight for supervised parameter/IC terms"
+    )
+    collocation: CollocationConfig = Field(
+        default_factory=CollocationConfig, description="Collocation strategy configuration"
+    )
+    non_smooth_observables: bool = Field(
+        default=True, description="Whether to use exact piecewise observation mapping"
+    )
+    smoothness_temperature: float = Field(
+        default=1.0, gt=0.0, description="Temperature parameter for smooth approximations"
+    )
+    loss_schedule: LossScheduleConfig | None = Field(
+        default=None, description="Optional loss scheduling configuration"
+    )
+
+    @model_validator(mode="after")
+    def validate_weights(self) -> Self:
+        """Validate that weights are not all zero."""
+        total_weight = self.physics_weight + self.data_weight + self.supervised_weight
+        if total_weight <= 0:
+            raise ValueError(
+                "At least one weight (physics_weight, data_weight, supervised_weight) must be > 0"
+            )
+        return self
+
+
+class InversePINNEvaluationReport(BaseModel):
+    """
+    Evaluation report for inverse PINN model.
+
+    Aggregates metrics across dataset splits as required by the spec.
+
+    Fields:
+        trajectory_error: Error between observed and reconstructed [u,a]
+        physics_residual_score: Summary statistic of ODE residual
+        parameter_error: Error in parameter estimates (present only when ground truth available)
+        ic_error: Error in initial condition estimates (present only when ground truth available)
+        simulation_consistency: Metric(s) for comparing simulated trajectories
+    """
+
+    trajectory_error: float = Field(
+        ..., ge=0.0, description="Error between observed and reconstructed [u,a]"
+    )
+    physics_residual_score: float = Field(
+        ..., ge=0.0, description="Summary statistic of ODE residual"
+    )
+    parameter_error: float | None = Field(
+        default=None, ge=0.0, description="Error in parameter estimates (null when labels absent)"
+    )
+    ic_error: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Error in initial condition estimates (null when labels absent)",
+    )
+    simulation_consistency: dict[str, float] = Field(
+        default_factory=dict,
+        description="Metrics for comparing simulated trajectories under inferred (θ̂, x̂₀)",
+    )
