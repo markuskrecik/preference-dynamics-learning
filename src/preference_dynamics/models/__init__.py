@@ -14,19 +14,28 @@ All models implement the PredictorModel protocol for unified training interface.
 from preference_dynamics.models.base import PredictorModel
 from preference_dynamics.models.cnn1d import CNN1DPredictor
 from preference_dynamics.models.cnn1d_feat import CNN1DFeatPredictor
-from preference_dynamics.models.schemas import CNN1DConfig, CNN1DFeatConfig, ModelConfig
+from preference_dynamics.models.inverse_pinn import InversePINNPredictor
+from preference_dynamics.models.schemas import (
+    CNN1DConfig,
+    CNN1DFeatConfig,
+    InversePINNConfig,
+    ModelConfig,
+)
 
 MODEL_REGISTRY: dict[str, tuple[type[ModelConfig], type[PredictorModel]]] = {
     "cnn1d": (CNN1DConfig, CNN1DPredictor),
     "cnn1d_feat": (CNN1DFeatConfig, CNN1DFeatPredictor),
+    "inverse_pinn": (InversePINNConfig, InversePINNPredictor),
 }
 
 __all__ = [
     "ModelConfig",
     "CNN1DConfig",
     "CNN1DFeatConfig",
+    "InversePINNConfig",
     "CNN1DPredictor",
     "CNN1DFeatPredictor",
+    "InversePINNPredictor",
     "PredictorModel",
     "MODEL_REGISTRY",
 ]

@@ -569,6 +569,42 @@ class TrainingHistory(BaseModel):
         return self
 
 
+class ObjectiveConfig(BaseModel):
+    """
+    Configuration for inverse PINN training objective.
+
+    Fields:
+        data_weight: Weight for data fitting loss
+        physics_weight: Weight for physics residual loss
+        supervised_weight: Weight for supervised parameter/IC loss (optional)
+        collocation: Collocation strategy ("observed_times", "observed_plus_extra")
+        non_smooth_observables: Whether to use exact piecewise observation mapping
+        smoothness_temperature: Temperature parameter for smooth approximations
+    """
+
+    data_weight: float = Field(..., ge=0.0, description="Weight for data fitting loss")
+    physics_weight: float = Field(..., ge=0.0, description="Weight for physics residual loss")
+    supervised_weight: float = Field(
+        default=0.0, ge=0.0, description="Weight for supervised parameter/IC loss"
+    )
+    collocation: Literal["observed_times", "uniform", "random"] = Field(
+        default="observed_times", description="Collocation strategy"
+    )
+    non_smooth_observables: bool = Field(
+        default=False, description="Whether to use exact piecewise observation mapping"
+    )
+    smoothness_temperature: float | None = Field(
+        default=None, ge=0.0, description="Temperature parameter for smooth approximations"
+    )
+
+    @model_validator(mode="after")
+    def validate_weights(self) -> Self:
+        """Validate that at least one weight is positive."""
+        if self.data_weight == 0.0 and self.physics_weight == 0.0:
+            raise ValueError("At least one of data_weight or physics_weight must be > 0")
+        return self
+
+
 class RunnerConfig(BaseModel):
     """
     Configuration object for experiment-level settings.
@@ -751,7 +787,7 @@ class InversePINNEvaluationReport(BaseModel):
         physics_residual_score: Summary statistic of ODE residual
         parameter_error: Error in parameter estimates (present only when ground truth available)
         ic_error: Error in initial condition estimates (present only when ground truth available)
-        simulation_consistency: Metric(s) for comparing simulated trajectories
+        time_series_match: Metric(s) for comparing simulated trajectories
     """
 
     trajectory_error: float = Field(
@@ -768,7 +804,7 @@ class InversePINNEvaluationReport(BaseModel):
         ge=0.0,
         description="Error in initial condition estimates (null when labels absent)",
     )
-    simulation_consistency: dict[str, float] = Field(
+    time_series_match: dict[str, float] = Field(
         default_factory=dict,
         description="Metrics for comparing simulated trajectories under inferred (θ̂, x̂₀)",
     )
