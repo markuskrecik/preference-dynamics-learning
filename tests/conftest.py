@@ -318,7 +318,7 @@ def trainer_checkpoint_env(
             target = torch.zeros(self.output_dim)
             return {
                 "inputs": {"x": data},
-                "target": target,
+                "targets": target,
             }
 
     checkpoint_dir = tmp_path_factory.mktemp("trainer_checkpoints")

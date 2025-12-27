@@ -25,6 +25,7 @@ from preference_dynamics.utils import (
     assemble_checkpoint_path,
     if_logging,
     parse_checkpoint_path,
+    to_device,
 )
 
 logger = logging.getLogger(__name__)
@@ -252,7 +253,7 @@ class Trainer:
             Predictions tensor of shape (batch_size, output_dim)
         """
 
-        inputs = {k: v.to(self.device) for k, v in batch["inputs"].items()}
+        inputs = to_device(batch["inputs"], self.device)
         predictions = self.model(**inputs)
         return predictions
 
@@ -277,18 +278,18 @@ class Trainer:
         Evaluate one batch (forward pass and loss computation).
 
         Args:
-            batch: Batch dictionary with "input" and "target" keys
+            batch: Batch dictionary with "inputs" and "targets" keys
 
         Returns:
             Tuple of (predictions, targets, loss) torch Tensors
         """
 
         predictions = self._predict_step(batch)
-        target = batch["target"].to(self.device)
+        targets = to_device(batch["targets"], self.device)
 
-        loss = self.criterion(predictions, target)
+        loss = self.criterion(predictions, targets)
 
-        return predictions, target, loss
+        return predictions, targets, loss
 
     def _evaluate_epoch(self, dataloader: DataLoader) -> tuple[torch.Tensor, torch.Tensor, float]:
         """
@@ -370,7 +371,7 @@ class Trainer:
         Perform training step for one batch: forward, backward, optimizer step.
 
         Args:
-            batch: Batch dictionary with keys: "inputs", "target"
+            batch: Batch dictionary with keys: "inputs", "targets"
 
         Returns:
             Loss tensor (scalar) for this batch

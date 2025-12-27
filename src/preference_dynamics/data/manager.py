@@ -245,7 +245,11 @@ class DataManager:
             num_workers = self.config.num_workers
 
         for split_name, samples in self._splits.items():
-            dataset = TimeSeriesDataset(samples, self.config.adapter)
+            dataset = TimeSeriesDataset(
+                samples,
+                input_adapter=self.config.input_adapter,
+                target_adapter=self.config.target_adapter,
+            )
             self._dataloaders[split_name] = DataLoader(
                 dataset,
                 batch_size=self.config.batch_size,
@@ -309,10 +313,10 @@ class DataManager:
     def n_inputs(self) -> int:
         """Get number of inputs."""
         sample = self.splits["train"][0]
-        return self.config.adapter.n_inputs(sample)  # type: ignore
+        return self.config.input_adapter.n_inputs(sample)  # type: ignore
 
     @property
-    def n_outputs(self) -> int:
-        """Get number of outputs."""
+    def n_targets(self) -> int:
+        """Get number of targets."""
         sample = self.splits["train"][0]
-        return self.config.adapter.n_outputs(sample)  # type: ignore
+        return self.config.target_adapter.n_targets(sample)  # type: ignore

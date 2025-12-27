@@ -7,96 +7,206 @@ import pytest
 import torch
 
 from preference_dynamics.data.adapters import (
-    CNN1DParamAdapter,
-    CNN1DParamICAdapter,
-    CNN1DParamICForecastAdapter,
+    ParameterICForecastTargetAdapter,
+    ParameterICTargetAdapter,
+    ParameterTargetAdapter,
+    StateFeatureInputAdapter,
+    StateInputAdapter,
 )
 
 
-class TestCNN1DParamAdapter:
-    """Test suite for CNN1DParamAdapter."""
+class TestStateInputAdapter:
+    """Test suite for StateInputAdapter."""
 
     @pytest.mark.parametrize("n_actions", [1, 2, 3])
-    def test_adapter_transforms_sample_correctly(
+    def test_get_inputs_returns_correct_structure(
         self, n_actions: int, make_time_series_sample
     ) -> None:
-        """Test adapter correctly transforms sample with correct structure, shapes, dtypes, and values."""
+        """Test adapter returns correct structure, shapes, dtypes, and values."""
         time_series = np.random.randn(2 * n_actions, 50)
         time_series[n_actions:, :] = np.abs(time_series[n_actions:, :])
         sample = make_time_series_sample(time_series, n_actions=n_actions)
-        adapter = CNN1DParamAdapter()
-        result = adapter(sample)
+        adapter = StateInputAdapter()
 
-        assert "inputs" in result
-        assert "target" in result
-        assert isinstance(result["inputs"], dict)
-        assert "x" in result["inputs"]
+        inputs = adapter.get_inputs(sample)
 
-        x = result["inputs"]["x"]
-        target = result["target"]
+        assert isinstance(inputs, dict)
+        assert "x" in inputs
+
+        x = inputs["x"]
 
         assert isinstance(x, torch.Tensor)
-        assert isinstance(target, torch.Tensor)
         assert x.dtype == torch.float32
-        assert target.dtype == torch.float32
         assert x.shape == sample.time_series.shape
-        assert target.shape == sample.parameters.values.shape
 
         np.testing.assert_allclose(x.numpy(), sample.time_series)
-        np.testing.assert_allclose(target.numpy(), sample.parameters.values)
-
-        assert adapter.n_inputs(sample) == sample.time_series.shape[0]
-        assert adapter.n_outputs(sample) == sample.parameters.values.shape[0]
 
     @pytest.mark.parametrize("seq_len", [2, 100, 1000])
-    def test_adapter_handles_different_sequence_lengths(
+    def test_get_inputs_handles_different_sequence_lengths(
         self, seq_len: int, make_time_series_sample
     ) -> None:
         """Test adapter works with various sequence lengths."""
         time_series = np.random.randn(4, seq_len)
         time_series[2:, :] = np.abs(time_series[2:, :])
         sample = make_time_series_sample(time_series, n_actions=2)
-        adapter = CNN1DParamAdapter()
-        result = adapter(sample)
+        adapter = StateInputAdapter()
+        inputs = adapter.get_inputs(sample)
 
-        assert result["inputs"]["x"].shape[1] == seq_len
-        assert adapter.n_inputs(sample) == 4
+        assert inputs["x"].shape[1] == seq_len
 
-
-class TestCNN1DParamICAdapter:
-    """Test suite for CNN1DParamICAdapter."""
-
-    @pytest.mark.parametrize("n_actions", [1, 2, 3, 4, 5])
-    def test_adapter_transforms_sample_correctly(
-        self, n_actions: int, make_time_series_sample
-    ) -> None:
-        """Test adapter correctly transforms sample with correct structure, shapes, dtypes, values, and concatenation order."""
+    @pytest.mark.parametrize("n_actions", [1, 2, 3])
+    def test_n_inputs_returns_correct_count(self, n_actions: int, make_time_series_sample) -> None:
+        """Test n_inputs returns correct number of input channels."""
         time_series = np.random.randn(2 * n_actions, 50)
         time_series[n_actions:, :] = np.abs(time_series[n_actions:, :])
         sample = make_time_series_sample(time_series, n_actions=n_actions)
-        adapter = CNN1DParamICAdapter()
-        result = adapter(sample)
+        adapter = StateInputAdapter()
 
-        assert "inputs" in result
-        assert "target" in result
-        assert isinstance(result["inputs"], dict)
-        assert "x" in result["inputs"]
+        assert adapter.n_inputs(sample) == sample.time_series.shape[0]
 
-        x = result["inputs"]["x"]
-        target = result["target"]
+
+class TestStateFeatureInputAdapter:
+    """Test suite for StateFeatureInputAdapter."""
+
+    @pytest.mark.parametrize("n_actions", [1, 2, 3])
+    def test_get_inputs_returns_correct_structure(
+        self, n_actions: int, make_time_series_sample
+    ) -> None:
+        """Test adapter returns correct structure with x and x_feat."""
+        time_series = np.random.randn(2 * n_actions, 50)
+        time_series[n_actions:, :] = np.abs(time_series[n_actions:, :])
+        sample = make_time_series_sample(time_series, n_actions=n_actions)
+        sample.features["is_steady_state"] = [True, False]
+        sample.features["steady_state_mean"] = [1.0, 2.0]
+        adapter = StateFeatureInputAdapter()
+
+        inputs = adapter.get_inputs(sample)
+
+        assert isinstance(inputs, dict)
+        assert "x" in inputs
+        assert "x_feat" in inputs
+
+        x = inputs["x"]
+        x_feat = inputs["x_feat"]
 
         assert isinstance(x, torch.Tensor)
-        assert isinstance(target, torch.Tensor)
+        assert isinstance(x_feat, torch.Tensor)
         assert x.dtype == torch.float32
-        assert target.dtype == torch.float32
+        assert x_feat.dtype == torch.float32
         assert x.shape == sample.time_series.shape
+
+        np.testing.assert_allclose(x.numpy(), sample.time_series)
+
+    def test_get_inputs_handles_none_features(self, make_time_series_sample) -> None:
+        """Test adapter handles None values in features."""
+        time_series = np.random.randn(4, 50)
+        time_series[2:, :] = np.abs(time_series[2:, :])
+        sample = make_time_series_sample(time_series, n_actions=2)
+        sample.features["is_steady_state"] = None
+        sample.features["steady_state_mean"] = None
+        adapter = StateFeatureInputAdapter()
+
+        inputs = adapter.get_inputs(sample)
+
+        assert "x_feat" in inputs
+        assert isinstance(inputs["x_feat"], torch.Tensor)
+
+    def test_get_inputs_handles_nested_lists(self, make_time_series_sample) -> None:
+        """Test adapter handles nested lists in features."""
+        time_series = np.random.randn(4, 50)
+        time_series[2:, :] = np.abs(time_series[2:, :])
+        sample = make_time_series_sample(time_series, n_actions=2)
+        sample.features["is_steady_state"] = [[True], [False]]
+        sample.features["steady_state_mean"] = [[1.0], [2.0]]
+        adapter = StateFeatureInputAdapter()
+
+        inputs = adapter.get_inputs(sample)
+
+        assert "x_feat" in inputs
+        assert isinstance(inputs["x_feat"], torch.Tensor)
+
+    @pytest.mark.parametrize("seq_len", [2, 100, 1000])
+    def test_get_inputs_handles_different_sequence_lengths(
+        self, seq_len: int, make_time_series_sample
+    ) -> None:
+        """Test adapter works with various sequence lengths."""
+        time_series = np.random.randn(4, seq_len)
+        time_series[2:, :] = np.abs(time_series[2:, :])
+        sample = make_time_series_sample(time_series, n_actions=2)
+        sample.features["is_steady_state"] = [True, False]
+        sample.features["steady_state_mean"] = [1.0, 2.0]
+        adapter = StateFeatureInputAdapter()
+        inputs = adapter.get_inputs(sample)
+
+        assert inputs["x"].shape[1] == seq_len
+
+    @pytest.mark.parametrize("n_actions", [1, 2, 3])
+    def test_n_inputs_returns_correct_count(self, n_actions: int, make_time_series_sample) -> None:
+        """Test n_inputs returns correct number of input channels."""
+        time_series = np.random.randn(2 * n_actions, 50)
+        time_series[n_actions:, :] = np.abs(time_series[n_actions:, :])
+        sample = make_time_series_sample(time_series, n_actions=n_actions)
+        sample.features["is_steady_state"] = [True, False]
+        sample.features["steady_state_mean"] = [1.0, 2.0]
+        adapter = StateFeatureInputAdapter()
+
+        assert adapter.n_inputs(sample) == sample.time_series.shape[0]
+
+
+class TestParameterTargetAdapter:
+    """Test suite for ParameterTargetAdapter."""
+
+    @pytest.mark.parametrize("n_actions", [1, 2, 3])
+    def test_get_targets_returns_correct_structure(
+        self, n_actions: int, make_time_series_sample
+    ) -> None:
+        """Test adapter returns correct structure, shapes, dtypes, and values."""
+        time_series = np.random.randn(2 * n_actions, 50)
+        time_series[n_actions:, :] = np.abs(time_series[n_actions:, :])
+        sample = make_time_series_sample(time_series, n_actions=n_actions)
+        adapter = ParameterTargetAdapter()
+
+        target = adapter.get_targets(sample)
+
+        assert isinstance(target, torch.Tensor)
+        assert target.dtype == torch.float32
+        assert target.shape == sample.parameters.values.shape
+
+        np.testing.assert_allclose(target.numpy(), sample.parameters.values)
+
+    @pytest.mark.parametrize("n_actions", [1, 2, 3])
+    def test_n_targets_returns_correct_count(self, n_actions: int, make_time_series_sample) -> None:
+        """Test n_targets returns correct number of target values."""
+        time_series = np.random.randn(2 * n_actions, 50)
+        time_series[n_actions:, :] = np.abs(time_series[n_actions:, :])
+        sample = make_time_series_sample(time_series, n_actions=n_actions)
+        adapter = ParameterTargetAdapter()
+
+        assert adapter.n_targets(sample) == sample.parameters.values.shape[0]
+
+
+class TestParameterICTargetAdapter:
+    """Test suite for ParameterICTargetAdapter."""
+
+    @pytest.mark.parametrize("n_actions", [1, 2, 3, 4, 5])
+    def test_get_targets_returns_correct_structure(
+        self, n_actions: int, make_time_series_sample
+    ) -> None:
+        """Test adapter returns correct structure, shapes, dtypes, values, and concatenation order."""
+        time_series = np.random.randn(2 * n_actions, 50)
+        time_series[n_actions:, :] = np.abs(time_series[n_actions:, :])
+        sample = make_time_series_sample(time_series, n_actions=n_actions)
+        adapter = ParameterICTargetAdapter()
+
+        target = adapter.get_targets(sample)
+
+        assert isinstance(target, torch.Tensor)
+        assert target.dtype == torch.float32
 
         expected_target_len = (
             sample.parameters.values.shape[0] + sample.initial_conditions.values.shape[0]
         )
         assert target.shape[0] == expected_target_len
-
-        np.testing.assert_allclose(x.numpy(), sample.time_series)
 
         expected_target = np.concatenate(
             [sample.parameters.values, sample.initial_conditions.values]
@@ -109,32 +219,28 @@ class TestCNN1DParamICAdapter:
         np.testing.assert_allclose(target_params, sample.parameters.values)
         np.testing.assert_allclose(target_ic, sample.initial_conditions.values)
 
-        assert adapter.n_inputs(sample) == sample.time_series.shape[0]
-        assert adapter.n_outputs(sample) == expected_target_len
+    @pytest.mark.parametrize("n_actions", [1, 2, 3, 4, 5])
+    def test_n_targets_returns_correct_count(self, n_actions: int, make_time_series_sample) -> None:
+        """Test n_targets returns correct number of target values."""
+        time_series = np.random.randn(2 * n_actions, 50)
+        time_series[n_actions:, :] = np.abs(time_series[n_actions:, :])
+        sample = make_time_series_sample(time_series, n_actions=n_actions)
+        adapter = ParameterICTargetAdapter()
 
-    @pytest.mark.parametrize("seq_len", [2, 100, 1000])
-    def test_adapter_handles_different_sequence_lengths(
-        self, seq_len: int, make_time_series_sample
-    ) -> None:
-        """Test adapter works with various sequence lengths."""
-        time_series = np.random.randn(4, seq_len)
-        time_series[2:, :] = np.abs(time_series[2:, :])
-        sample = make_time_series_sample(time_series, n_actions=2)
-        adapter = CNN1DParamICAdapter()
-        result = adapter(sample)
-
-        assert result["inputs"]["x"].shape[1] == seq_len
-        assert adapter.n_inputs(sample) == 4
+        expected_target_len = (
+            sample.parameters.values.shape[0] + sample.initial_conditions.values.shape[0]
+        )
+        assert adapter.n_targets(sample) == expected_target_len
 
 
-class TestCNN1DParamICForecastAdapter:
-    """Test suite for CNN1DParamICForecastAdapter."""
+class TestParameterICForecastTargetAdapter:
+    """Test suite for ParameterICForecastTargetAdapter."""
 
     @pytest.mark.parametrize("n_actions", [1, 2, 3])
-    def test_adapter_transforms_sample_correctly(
+    def test_get_targets_returns_correct_structure(
         self, n_actions: int, make_time_series_sample
     ) -> None:
-        """Test adapter correctly transforms sample with forecast values."""
+        """Test adapter returns correct structure with forecast values."""
         time_series = np.random.randn(2 * n_actions, 50)
         time_series[n_actions:, :] = np.abs(time_series[n_actions:, :])
         sample = make_time_series_sample(time_series, n_actions=n_actions)
@@ -142,22 +248,11 @@ class TestCNN1DParamICForecastAdapter:
         forecast_values = np.random.randn(2 * n_actions, n_steps)
         sample.features["forecast_values"] = forecast_values.tolist()
 
-        adapter = CNN1DParamICForecastAdapter()
-        result = adapter(sample)
+        adapter = ParameterICForecastTargetAdapter()
+        target = adapter.get_targets(sample)
 
-        assert "inputs" in result
-        assert "target" in result
-        assert isinstance(result["inputs"], dict)
-        assert "x" in result["inputs"]
-
-        x = result["inputs"]["x"]
-        target = result["target"]
-
-        assert isinstance(x, torch.Tensor)
         assert isinstance(target, torch.Tensor)
-        assert x.dtype == torch.float32
         assert target.dtype == torch.float32
-        assert x.shape == sample.time_series.shape
 
         expected_target_len = (
             sample.parameters.values.shape[0]
@@ -165,8 +260,6 @@ class TestCNN1DParamICForecastAdapter:
             + forecast_values.size
         )
         assert target.shape[0] == expected_target_len
-
-        np.testing.assert_allclose(x.numpy(), sample.time_series)
 
         expected_target = np.concatenate(
             [
@@ -187,27 +280,8 @@ class TestCNN1DParamICForecastAdapter:
         np.testing.assert_allclose(target_ic, sample.initial_conditions.values)
         np.testing.assert_allclose(target_forecast, forecast_values.flatten())
 
-        assert adapter.n_inputs(sample) == sample.time_series.shape[0]
-        assert adapter.n_outputs(sample) == expected_target_len
-
-    @pytest.mark.parametrize("seq_len", [10, 50, 100])
-    def test_adapter_handles_different_sequence_lengths(
-        self, seq_len: int, make_time_series_sample
-    ) -> None:
-        """Test adapter works with various sequence lengths."""
-        time_series = np.random.randn(4, seq_len)
-        time_series[2:, :] = np.abs(time_series[2:, :])
-        sample = make_time_series_sample(time_series, n_actions=2)
-        sample.features["forecast_values"] = np.random.randn(4, 2).tolist()
-
-        adapter = CNN1DParamICForecastAdapter()
-        result = adapter(sample)
-
-        assert result["inputs"]["x"].shape[1] == seq_len
-        assert adapter.n_inputs(sample) == 4
-
     @pytest.mark.parametrize("n_steps", [1, 2, 5])
-    def test_adapter_handles_different_forecast_lengths(
+    def test_get_targets_handles_different_forecast_lengths(
         self, n_steps: int, make_time_series_sample
     ) -> None:
         """Test adapter works with various forecast value lengths."""
@@ -217,13 +291,31 @@ class TestCNN1DParamICForecastAdapter:
         forecast_values = np.random.randn(4, n_steps)
         sample.features["forecast_values"] = forecast_values.tolist()
 
-        adapter = CNN1DParamICForecastAdapter()
-        result = adapter(sample)
+        adapter = ParameterICForecastTargetAdapter()
+        target = adapter.get_targets(sample)
 
         expected_target_len = (
             sample.parameters.values.shape[0]
             + sample.initial_conditions.values.shape[0]
             + forecast_values.size
         )
-        assert result["target"].shape[0] == expected_target_len
-        assert adapter.n_outputs(sample) == expected_target_len
+        assert target.shape[0] == expected_target_len
+
+    @pytest.mark.parametrize("n_actions", [1, 2, 3])
+    def test_n_targets_returns_correct_count(self, n_actions: int, make_time_series_sample) -> None:
+        """Test n_targets returns correct number of target values."""
+        time_series = np.random.randn(2 * n_actions, 50)
+        time_series[n_actions:, :] = np.abs(time_series[n_actions:, :])
+        sample = make_time_series_sample(time_series, n_actions=n_actions)
+        n_steps = 3
+        forecast_values = np.random.randn(2 * n_actions, n_steps)
+        sample.features["forecast_values"] = forecast_values.tolist()
+
+        adapter = ParameterICForecastTargetAdapter()
+
+        expected_target_len = (
+            sample.parameters.values.shape[0]
+            + sample.initial_conditions.values.shape[0]
+            + forecast_values.size
+        )
+        assert adapter.n_targets(sample) == expected_target_len
