@@ -11,102 +11,43 @@ import torch
 from preference_dynamics.schemas import TimeSeriesSample
 
 
-class ModelAdapter(Protocol):
+class InputAdapter(Protocol):
     """
     Adapter for model input and output.
     """
 
-    def __call__(self, sample: Any) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]: ...
+    def get_inputs(self, sample: Any) -> dict[str, torch.Tensor]: ...
 
     def n_inputs(self, sample: Any) -> int: ...
 
-    def n_outputs(self, sample: Any) -> int: ...
+
+class TargetAdapter(Protocol):
+    def get_targets(self, sample: Any) -> torch.Tensor | dict[str, torch.Tensor]: ...
+
+    def n_targets(self, sample: Any) -> int: ...
 
 
-class CNN1DParamAdapter:
+class StateInputAdapter:
     """
-    Adapter for CNN1D parameter prediction.
-    Compatible with `model.forward(x)`.
-    """
-
-    def __call__(
-        self, sample: TimeSeriesSample
-    ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
-        x = torch.from_numpy(sample.time_series.copy()).float()
-        target = torch.from_numpy(sample.parameters.values.copy()).float()
-
-        return {"inputs": {"x": x}, "target": target}
-
-    def n_inputs(self, sample: TimeSeriesSample) -> int:
-        return int(sample.time_series.shape[0])
-
-    def n_outputs(self, sample: TimeSeriesSample) -> int:
-        return int(sample.parameters.values.shape[0])
-
-
-class CNN1DParamICAdapter:
-    """
-    Adapter for CNN1D parameter and initial conditions prediction.
-    Compatible with `model.forward(x)`.
+    Adapter for state input. Compatible with `model.forward(x)`.
     """
 
-    def __call__(
-        self, sample: TimeSeriesSample
-    ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
-        x = torch.from_numpy(sample.time_series.copy()).float()
-        parameters = torch.from_numpy(sample.parameters.values.copy()).float()
-        initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
-        target = torch.cat([parameters, initial_conditions], dim=0)
-
-        return {"inputs": {"x": x}, "target": target}
-
-    def n_inputs(self, sample: TimeSeriesSample) -> int:
-        return int(sample.time_series.shape[0])
-
-    def n_outputs(self, sample: TimeSeriesSample) -> int:
-        return int(sample.parameters.values.shape[0] + sample.initial_conditions.values.shape[0])
-
-
-class CNN1DParamICForecastAdapter:
-    """
-    Adapter for CNN1D parameter and initial conditions and forecast values prediction.
-    Compatible with `model.forward(x)`.
-    """
-
-    def inputs(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
+    def get_inputs(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
         x = torch.from_numpy(sample.time_series.copy()).float()
         return {"x": x}
 
-    def target(self, sample: TimeSeriesSample) -> torch.Tensor:
-        parameters = torch.from_numpy(sample.parameters.values.copy()).float()
-        initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
-        forecast_values = torch.from_numpy(np.array(sample.features["forecast_values"])).float()
-        forecast_values = forecast_values.flatten()
-        target = torch.cat([parameters, initial_conditions, forecast_values], dim=0)
-
-        return target
-
-    def __call__(
-        self, sample: TimeSeriesSample
-    ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
-        return {"inputs": self.inputs(sample), "target": self.target(sample)}
-
     def n_inputs(self, sample: TimeSeriesSample) -> int:
-        return int(self.inputs(sample)["x"].shape[0])
-
-    def n_outputs(self, sample: TimeSeriesSample) -> int:
-        return int(self.target(sample).shape[0])
+        return int(self.get_inputs(sample)["x"].shape[0])
 
 
-class CNN1DFeatParamICForecastAdapter:
+class StateFeatureInputAdapter:
     """
-    Adapter for CNN1D with features parameter and initial conditions and forecast values prediction.
-    Compatible with `model.forward(x, x_feat)`.
+    Adapter for state and feature input. Compatible with `model.forward(x, x_feat)`.
     """
 
     feature_names = ["is_steady_state", "steady_state_mean"]
 
-    def inputs(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
+    def get_inputs(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
         def flatten_nested_lists(values: Any) -> list[Any]:
             flat = []
             for v in values:
@@ -125,22 +66,50 @@ class CNN1DFeatParamICForecastAdapter:
         x_feat = torch.from_numpy(features).float().flatten()
         return {"x": x, "x_feat": x_feat}
 
-    def target(self, sample: TimeSeriesSample) -> torch.Tensor:
+    def n_inputs(self, sample: TimeSeriesSample) -> int:
+        return int(self.get_inputs(sample)["x"].shape[0])
+
+
+class ParameterTargetAdapter:
+    """
+    Adapter for parameter target.
+    """
+
+    def get_targets(self, sample: TimeSeriesSample) -> torch.Tensor:
+        target = torch.from_numpy(sample.parameters.values.copy()).float()
+        return target
+
+    def n_targets(self, sample: TimeSeriesSample) -> int:
+        return int(self.get_targets(sample).shape[0])
+
+
+class ParameterICTargetAdapter:
+    """
+    Adapter for parameter and initial conditions target.
+    """
+
+    def get_targets(self, sample: TimeSeriesSample) -> torch.Tensor:
+        parameters = torch.from_numpy(sample.parameters.values.copy()).float()
+        initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
+        target = torch.cat([parameters, initial_conditions], dim=0)
+        return target
+
+    def n_targets(self, sample: TimeSeriesSample) -> int:
+        return int(self.get_targets(sample).shape[0])
+
+
+class ParameterICForecastTargetAdapter:
+    """
+    Adapter for parameter, initial conditions and forecast values target.
+    """
+
+    def get_targets(self, sample: TimeSeriesSample) -> torch.Tensor:
         parameters = torch.from_numpy(sample.parameters.values.copy()).float()
         initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
         forecast_values = torch.from_numpy(np.array(sample.features["forecast_values"])).float()
         forecast_values = forecast_values.flatten()
         target = torch.cat([parameters, initial_conditions, forecast_values], dim=0)
-
         return target
 
-    def __call__(
-        self, sample: TimeSeriesSample
-    ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
-        return {"inputs": self.inputs(sample), "target": self.target(sample)}
-
-    def n_inputs(self, sample: TimeSeriesSample) -> int:
-        return int(self.inputs(sample)["x"].shape[0])
-
-    def n_outputs(self, sample: TimeSeriesSample) -> int:
-        return int(self.target(sample).shape[0])
+    def n_targets(self, sample: TimeSeriesSample) -> int:
+        return int(self.get_targets(sample).shape[0])

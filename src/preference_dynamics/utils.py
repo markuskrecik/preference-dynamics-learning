@@ -1,9 +1,10 @@
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from itertools import chain, combinations
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, cast
 
 import mlflow
+import torch
 from optuna.trial import FixedTrial, FrozenTrial, Trial
 
 type TrialLike = Trial | FrozenTrial | FixedTrial
@@ -212,6 +213,43 @@ def assemble_checkpoint_path(
         raise ValueError("Too many subdirectories provided.")
 
     return Path(*out)
+
+
+T = TypeVar("T")
+
+
+def to_device[T](data: T, device: torch.device) -> T:
+    """
+    Move all tensors in data to device. Supports tuple, list, dict.
+    """
+    if isinstance(data, torch.Tensor):
+        out = data.to(device)
+    elif isinstance(data, dict):
+        out = {k: to_device(v, device) for k, v in data.items()}
+    elif isinstance(data, tuple):
+        out = tuple(to_device(v, device) for v in data)
+    elif isinstance(data, list):
+        out = [to_device(v, device) for v in data]
+    else:
+        out = data
+    return cast(T, out)
+
+
+def to_cpu_numpy[T](data: T) -> T:
+    """
+    Move all tensors in data to CPU and convert to numpy. Supports tuple, list, dict.
+    """
+    if isinstance(data, torch.Tensor):
+        out = data.cpu().numpy()
+    elif isinstance(data, dict):
+        out = {k: to_cpu_numpy(v) for k, v in data.items()}
+    elif isinstance(data, tuple):
+        out = tuple(to_cpu_numpy(v) for v in data)
+    elif isinstance(data, list):
+        out = [to_cpu_numpy(v) for v in data]
+    else:
+        out = data
+    return cast(T, out)
 
 
 def to_mathematica_parameters(config) -> None:  # type: ignore
