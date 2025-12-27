@@ -6,8 +6,9 @@ import mlflow
 import torch
 from torch.utils.data import Dataset
 
-from preference_dynamics.data.adapters import ModelAdapter
+from preference_dynamics.data.adapters import InputAdapter, TargetAdapter
 from preference_dynamics.schemas import TimeSeriesSample
+from preference_dynamics.utils import to_cpu_numpy
 
 
 class TimeSeriesDataset(Dataset):  # type: ignore
@@ -15,13 +16,19 @@ class TimeSeriesDataset(Dataset):  # type: ignore
     PyTorch Dataset for preference dynamics time series.
     """
 
-    def __init__(self, samples: list[TimeSeriesSample], adapter: ModelAdapter) -> None:
+    def __init__(
+        self,
+        samples: list[TimeSeriesSample],
+        input_adapter: InputAdapter,
+        target_adapter: TargetAdapter,
+    ) -> None:
         """
         Initialize dataset from list of samples.
 
         Args:
             samples: List of TimeSeriesSample objects (must all have same n_actions)
-            adapter: ModelAdapter to use for converting samples to model inputs and targets
+            input_adapter: InputAdapter to use for converting samples to model inputs
+            target_adapter: TargetAdapter to use for converting samples to model targets
 
         Raises:
             ValueError: If samples list is empty or has inconsistent n_actions
@@ -39,13 +46,14 @@ class TimeSeriesDataset(Dataset):  # type: ignore
 
         self.n_actions = n_actions
         self.samples = samples
-        self.adapter = adapter
+        self.input_adapter = input_adapter
+        self.target_adapter = target_adapter
 
     def __len__(self) -> int:
         """Return number of samples in dataset."""
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
+    def __getitem__(self, idx: int) -> dict[str, dict[str, torch.Tensor]]:
         """
         Get a single sample from the dataset.
 
@@ -54,12 +62,15 @@ class TimeSeriesDataset(Dataset):  # type: ignore
 
         Returns:
             Dictionary with keys:
-                - input: dict[str, torch.Tensor] - model input
-                - target: torch.Tensor - model target
+                - inputs: dict[str, torch.Tensor]
+                - targets: dict[str, torch.Tensor]
         """
         sample = self.samples[idx]
 
-        return self.adapter(sample)
+        return {
+            "inputs": self.input_adapter.get_inputs(sample),
+            "targets": self.target_adapter.get_targets(sample),
+        }
 
     @property
     def signature(self) -> mlflow.models.ModelSignature:
@@ -68,6 +79,6 @@ class TimeSeriesDataset(Dataset):  # type: ignore
         """
 
         sample = self.__getitem__(0)
-        inputs = {k: v.cpu().numpy() for k, v in sample["inputs"].items()}
-        target = sample["target"].cpu().numpy()  # type: ignore
-        return mlflow.models.infer_signature(inputs, target)
+        inputs = to_cpu_numpy(sample["inputs"])
+        targets = to_cpu_numpy(sample["targets"])
+        return mlflow.models.infer_signature(inputs, targets)
