@@ -108,24 +108,35 @@ class CNN1DFeatConfig(ModelConfig):
         return self
 
 
-class TimeSeriesEncoderConfig(BaseModel):
+class TimeSeriesEncoderConfig(ModelConfig):
     """
     Configuration for time-series encoder that maps trajectories to parameter/IC estimates.
 
     Fields:
+        model_type: Model type identifier (default: "cnn1d")
+        in_dims: Input dimensions as (channels, length) tuple
         filters: Output dimensions of LazyConv1d blocks (length = number of conv blocks)
         kernel_sizes: Kernel sizes for each conv block (same length as filters)
-        features: Output dimensions of LazyLinear blocks (length = number of FC blocks)
+        hidden_dims: Output dimensions of LazyLinear blocks (length = number of FC blocks)
+        out_dims: Output dimensions (total params + IC size)
         dropout: Dropout rate (0.0 to 1.0)
     """
 
+    model_type: str = "cnn1d"
+    model_name: str = Field(..., description="Model identifier")
+    in_dims: tuple[int, int] = Field(
+        ..., description="Input dimensions as (channels, length) tuple"
+    )
     filters: Sequence[int] = Field(
         ..., min_length=1, description="Output dimensions of conv blocks"
     )
     kernel_sizes: Sequence[int] = Field(
         ..., min_length=1, description="Kernel sizes for each conv block"
     )
-    features: Sequence[int] = Field(..., min_length=1, description="Output dimensions of FC blocks")
+    hidden_dims: Sequence[int] = Field(
+        ..., min_length=1, description="Output dimensions of FC blocks"
+    )
+    out_dims: int = Field(..., gt=0, description="Output dimensions (total params + IC size)")
     dropout: float = Field(..., ge=0.0, le=1.0, description="Dropout rate")
 
     @model_validator(mode="after")
@@ -141,31 +152,49 @@ class TimeSeriesEncoderConfig(BaseModel):
     @model_validator(mode="after")
     def validate_positive_values(self) -> Self:
         """Validate that all integer values are > 0."""
+        if self.in_dims[0] <= 0 or self.in_dims[1] <= 0:
+            raise ValueError("in_dims values must be > 0")
         if any(f <= 0 for f in self.filters):
             raise ValueError("All filter values must be > 0")
         if any(k <= 0 for k in self.kernel_sizes):
             raise ValueError("All kernel_size values must be > 0")
-        if any(f <= 0 for f in self.features):
-            raise ValueError("All feature values must be > 0")
+        if any(d <= 0 for d in self.hidden_dims):
+            raise ValueError("All hidden_dims values must be > 0")
         return self
 
 
-class SurrogateConfig(BaseModel):
+class SurrogateConfig(ModelConfig):
     """
     Configuration for trajectory surrogate that maps (t, θ, x₀) → x(t).
+
+    Fields:
+        model_type: Model type identifier (default: "surrogate")
+        in_dims: Input dimensions as (channels, length) tuple
+        hidden_dims: Hidden layer dimensions for MLP
+        out_dims: Output dimensions as (channels, length) tuple
+        dropout: Dropout rate (0.0 to 1.0)
     """
 
+    model_type: str = "surrogate"
+    model_name: str = Field(..., description="Model identifier")
+    in_dims: tuple[int, int] = Field(
+        ..., description="Input dimensions as (channels, length) tuple"
+    )
     hidden_dims: Sequence[int] = Field(
         ..., min_length=1, description="Hidden layer dimensions for MLP"
     )
-    activation: str = Field(
-        default="relu", description="Activation function (relu, tanh, gelu, etc.)"
+    out_dims: tuple[int, int] = Field(
+        ..., description="Output dimensions as (channels, length) tuple"
     )
     dropout: float = Field(default=0.0, ge=0.0, le=1.0, description="Dropout rate")
 
     @model_validator(mode="after")
     def validate_positive_values(self) -> Self:
         """Validate that all integer values are > 0."""
+        if any(d <= 0 for d in self.in_dims):
+            raise ValueError("All in_dims values must be > 0")
+        if any(d <= 0 for d in self.out_dims):
+            raise ValueError("out_dims values must be > 0")
         if any(d <= 0 for d in self.hidden_dims):
             raise ValueError("All hidden_dims values must be > 0")
         return self
@@ -181,18 +210,13 @@ class InversePINNConfig(ModelConfig):
         - parameter_transform: enforces constraints on θ̂
 
     Fields:
+        model_type: Model type identifier (default: "inverse_pinn")
         model_name: Model identifier
-        in_channels: Number of input channels (typically 2 * n_actions)
         encoder: Configuration for time-series encoder
         surrogate: Configuration for conditional trajectory surrogate
-        parameter_transform: Parameter constraint transform (softplus, exp, etc.)
     """
 
     model_type: str = "inverse_pinn"
     model_name: str = Field(..., description="Model identifier")
-    in_channels: int = Field(..., gt=0, description="Number of input channels")
     encoder: TimeSeriesEncoderConfig = Field(..., description="Time-series encoder configuration")
     surrogate: SurrogateConfig = Field(..., description="Trajectory surrogate configuration")
-    parameter_transform: str = Field(
-        default="softplus", description="Parameter constraint transform (softplus, exp, etc.)"
-    )

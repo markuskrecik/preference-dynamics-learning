@@ -11,12 +11,8 @@ This module provides:
 - Simulation consistency evaluation utilities
 """
 
-from preference_dynamics.training.logging import (
-    log_objective_terms,
-)
-from preference_dynamics.training.loss import (
-    compute_physics_residual_score,
-)
+from preference_dynamics.training.logging import log_PINN_loss
+from preference_dynamics.training.loss import PINNLoss
 from preference_dynamics.training.metrics import (
     compute_metrics,
     time_series_match_metrics,
@@ -27,6 +23,6 @@ __all__ = [
     "Trainer",
     "compute_metrics",
     "time_series_match_metrics",
-    "log_objective_terms",
-    "compute_physics_residual_score",
+    "log_PINN_loss",
+    "PINNLoss",
 ]

@@ -13,13 +13,14 @@ import torch
 from torch import nn
 
 from preference_dynamics.models.base import PredictorModel
-from preference_dynamics.models.schemas import InversePINNConfig
-from preference_dynamics.schemas import ICVector, ParameterVector
-from preference_dynamics.solver.torch_equations import compute_observables_torch
-from preference_dynamics.utils import get_diagonal_indices
+from preference_dynamics.models.schemas import (
+    InversePINNConfig,
+    SurrogateConfig,
+    TimeSeriesEncoderConfig,
+)
 
 
-class TimeSeriesEncoder(nn.Module):  # type: ignore
+class TimeSeriesEncoder(PredictorModel):
     """
     Time-series encoder that maps observed trajectories to parameter and IC estimates.
 
@@ -29,32 +30,26 @@ class TimeSeriesEncoder(nn.Module):  # type: ignore
         - Fully connected layers to output (θ̂, x̂₀)
     """
 
-    def __init__(
-        self,
-        in_channels: int,
-        filters: list[int],
-        kernel_sizes: list[int],
-        features: list[int],
-        dropout: float,
-        n_actions: int,
-    ) -> None:
+    def __init__(self, config: TimeSeriesEncoderConfig) -> None:
         """
         Args:
-            in_channels: Number of input channels (typically 2 * n_actions)
-            filters: Output dimensions of conv blocks
-            kernel_sizes: Kernel sizes for each conv block
-            features: Output dimensions of FC blocks
-            dropout: Dropout rate
-            n_actions: Number of actions (n)
+            config: TimeSeriesEncoderConfig
         """
         super().__init__()
-        self.n_actions = n_actions
-        self.n_params = 2 * n_actions + 2 * n_actions**2
-        self.n_ic = 2 * n_actions
-        self.n_output = self.n_params + self.n_ic
+        self._config = config
+        # in_channels = config.in_dims[0]
+        # self.n_actions = in_channels // 2
+        # self.n_params = 2 * self.n_actions + 2 * self.n_actions**2
+        # self.n_ic = 2 * self.n_actions
+        self.n_output = config.out_dims
+
+        # if self.n_output != self.n_params + self.n_ic:
+        #     raise ValueError(
+        #         f"out_dims ({self.n_output}) must equal n_params + n_ic ({self.n_params + self.n_ic})"
+        #     )
 
         self.conv_blocks = nn.ModuleList()
-        for out_channels, kernel_size in zip(filters, kernel_sizes, strict=True):
+        for out_channels, kernel_size in zip(config.filters, config.kernel_sizes, strict=True):
             conv_block = nn.Sequential(
                 nn.LazyConv1d(
                     out_channels=out_channels,
@@ -68,11 +63,11 @@ class TimeSeriesEncoder(nn.Module):  # type: ignore
 
         self.global_pool = nn.Sequential(
             nn.AdaptiveAvgPool1d(1),
-            nn.Dropout(dropout),
+            nn.Dropout(config.dropout),
         )
 
         self.fc_layers = nn.ModuleList()
-        for feature_dim in features:
+        for feature_dim in config.hidden_dims:
             fc_layer = nn.Sequential(
                 nn.LazyLinear(feature_dim),
                 nn.ReLU(inplace=True),
@@ -105,56 +100,45 @@ class TimeSeriesEncoder(nn.Module):  # type: ignore
 
         return params_unconstrained, ic
 
+    @property
+    def config(self) -> TimeSeriesEncoderConfig:
+        """Configuration for the inverse PINN model."""
+        return self._config
 
-class Surrogate(nn.Module):  # type: ignore
+    @property
+    def n_parameters(self) -> int:
+        """Return number of trainable parameters in model."""
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
+class Surrogate(PredictorModel):
     """
     Trajectory surrogate that maps (t, θ̂, x̂₀) → x̂(t).
 
     Architecture:
-        - MLP that takes concatenated [t, θ̂, x̂₀] as input
+        - MLP that takes concatenated [t, θ̂, x̂₀] as input per time point
         - Outputs latent state x̂(t) = [v̂(t), m̂(t)]
     """
 
-    def __init__(
-        self,
-        n_params: int,
-        n_ic: int,
-        hidden_dims: list[int],
-        activation: str = "relu",
-        dropout: float = 0.0,
-    ) -> None:
+    def __init__(self, config: SurrogateConfig) -> None:
         """
         Args:
-            n_params: Number of parameters (2n + 2n²)
-            n_ic: Number of initial conditions (2n)
-            hidden_dims: Hidden layer dimensions for MLP
-            activation: Activation function name
-            dropout: Dropout rate
+            config: SurrogateConfig
         """
         super().__init__()
-        self.n_params = n_params
-        self.n_ic = n_ic
-        self.n_state = n_ic
-        input_dim = 1 + n_params + n_ic
-
-        activation_map = {
-            "relu": nn.ReLU,
-            "tanh": nn.Tanh,
-            "gelu": nn.GELU,
-        }
-        if activation not in activation_map:
-            raise ValueError(f"Unknown activation: {activation}")
+        self._config = config
+        out_channels = config.out_dims[0]
 
         layers = []
-        prev_dim = input_dim
-        for hidden_dim in hidden_dims:
+        prev_dim = config.in_dims[0]
+        for hidden_dim in config.hidden_dims:
             layers.append(nn.Linear(prev_dim, hidden_dim))
-            layers.append(activation_map[activation]())
-            if dropout > 0:
-                layers.append(nn.Dropout(dropout))
+            layers.append(nn.GELU())
+            if config.dropout > 0:
+                layers.append(nn.Dropout(config.dropout))
             prev_dim = hidden_dim
 
-        layers.append(nn.Linear(prev_dim, self.n_state))
+        layers.append(nn.Linear(prev_dim, out_channels))
         self.mlp = nn.Sequential(*layers)
 
     def forward(
@@ -167,32 +151,32 @@ class Surrogate(nn.Module):  # type: ignore
         Predict latent state at time t given parameters and initial conditions.
 
         Args:
-            t: Time points of shape (B, T) or (T,)
+            t: Time points of shape (B, T)
             params: Parameter estimates of shape (B, n_params)
             ic: Initial condition estimates of shape (B, n_ic)
 
         Returns:
-            state: Latent state [v̂(t), m̂(t)] of shape (B, T, n_state) or (T, n_state)
+            latent_state: Latent state [v̂(t), m̂(t)] of shape (B, 2n, T)
         """
-        # if t.ndim == 1:
-        #     t = t.unsqueeze(0)
-        #     batch_mode = False
-        # else:
-        #     batch_mode = True
+        B, T = t.shape
+        params_expanded = params.unsqueeze(1).expand(B, T, -1)
+        ic_expanded = ic.unsqueeze(1).expand(B, T, -1)
+        t_expanded = t.unsqueeze(-1)
 
-        # B, T = t.shape
-        # params_expanded = params.unsqueeze(1).expand(B, T, -1)
-        # ic_expanded = ic.unsqueeze(1).expand(B, T, -1)
-        # t_expanded = t.unsqueeze(-1)
+        x = torch.cat([t_expanded, params_expanded, ic_expanded], dim=-1)
+        latent_state = self.mlp(x)
 
-        # x = torch.cat([t_expanded, params_expanded, ic_expanded], dim=-1)
-        x = torch.cat([t, params, ic], dim=-1)
-        state = self.mlp(x)
+        return latent_state.transpose(1, 2)
 
-        # if not batch_mode:
-        #     state = state.squeeze(0)
+    @property
+    def config(self) -> SurrogateConfig:
+        """Configuration for the inverse PINN model."""
+        return self._config
 
-        return state
+    @property
+    def n_parameters(self) -> int:
+        """Return number of trainable parameters in model."""
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
 class InversePINNPredictor(PredictorModel):
@@ -214,154 +198,36 @@ class InversePINNPredictor(PredictorModel):
         super().__init__()
         self._config = config
 
-        n_actions = self._infer_n_actions(config.in_channels)
+        self.encoder = TimeSeriesEncoder(config.encoder)
+        self.surrogate = Surrogate(config.surrogate)
 
-        self.encoder = TimeSeriesEncoder(
-            in_channels=config.in_channels,
-            filters=list(config.encoder.filters),
-            kernel_sizes=list(config.encoder.kernel_sizes),
-            features=list(config.encoder.features),
-            dropout=config.encoder.dropout,
-            n_actions=n_actions,
-        )
-
-        n_params = 2 * n_actions + 2 * n_actions**2
-        n_ic = 2 * n_actions
-
-        self.surrogate = Surrogate(
-            n_params=n_params,
-            n_ic=n_ic,
-            hidden_dims=list(config.surrogate.hidden_dims),
-            activation=config.surrogate.activation,
-            dropout=config.surrogate.dropout,
-        )
-
-        self.parameter_transform_type = config.parameter_transform
-        self.n_actions = n_actions
-
-    # TODO: remove
-    def _infer_n_actions(self, in_channels: int) -> int:
-        """Infer n_actions from in_channels (assumes in_channels = 2 * n_actions)."""
-        if in_channels % 2 != 0:
-            raise ValueError(f"in_channels must be even, got {in_channels}")
-        return in_channels // 2
+        in_channels = config.encoder.in_dims[0]
+        self.n_actions = in_channels // 2
 
     def forward(
         self,
         x: torch.Tensor,
         t: torch.Tensor,
-        return_intermediates: bool = False,  # TODO: remove
-    ) -> torch.Tensor | dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         """
         Forward pass through inverse PINN.
 
         Args:
             x: Observed time series of shape (B, in_channels, T)
-            t: Time points of shape (T,) or (B, T)
-            return_intermediates: Whether to return intermediate outputs
+            t: Time points of shape (B, T) or (B, T) with requires_grad=True
 
         Returns:
-            If return_intermediates=False:
-                observables: Predicted observables [û, â] of shape (B, in_channels, T)
-            If return_intermediates=True:
-                Dictionary with:
-                    - observables: Predicted observables
-                    - params_unconstrained: Unconstrained parameter estimates
-                    - params_constrained: Constrained parameter estimates
-                    - ic: Initial condition estimates
-                    - state: Latent state trajectory
+            Dictionary with:
+                - params: Parameter estimates of shape (B, 2n(n+1))
+                - ic: Initial condition estimates of shape (B, 2n)
+                - latent_state: Latent state trajectory of shape (B, 2n, T)
         """
-        params_unconstrained, ic = self.encoder(x)
+        params, ic = self.encoder(x)
+        t.unsqueeze_(-1)
 
-        params_constrained = self._apply_parameter_transform(
-            params_unconstrained, self.parameter_transform_type
-        )
+        latent_state = self.surrogate(t, params, ic)
 
-        # TODO: remove?
-        t_batch = t.unsqueeze(0).expand(x.shape[0], -1) if t.ndim == 1 else t
-
-        state = self.surrogate(t_batch, params_constrained, ic)
-
-        mu = params_constrained[:, self.n_actions : 2 * self.n_actions]
-        mu_expanded = mu.unsqueeze(1).expand(-1, state.shape[1], -1)
-
-        observables = compute_observables_torch(
-            state=state,
-            mu=mu_expanded,
-            n_actions=self.n_actions,
-            smooth=False,
-        )
-
-        if return_intermediates:
-            return {
-                "observables": observables,
-                "params_unconstrained": params_unconstrained,
-                "params_constrained": params_constrained,
-                "ic": ic,
-                "state": state,
-            }
-        return observables
-
-    # TODO: move to encoder
-    def _apply_parameter_transform(
-        self,
-        params_unconstrained: torch.Tensor,
-        transform_type: str,
-    ) -> torch.Tensor:
-        """
-        Apply parameter constraint transform.
-
-        Args:
-            params_unconstrained: Unconstrained parameters of shape (B, n_params)
-            transform_type: Transform type ("softplus", "exp", etc.)
-
-        Returns:
-            params_constrained: Constrained parameters of shape (B, n_params)
-        """
-        params_constrained = params_unconstrained.clone()
-        diagonal_indices = get_diagonal_indices(self.n_actions)
-        for idx in diagonal_indices:
-            if transform_type == "softplus":
-                params_constrained[:, idx] = torch.nn.functional.softplus(
-                    params_unconstrained[:, idx]
-                )
-            elif transform_type == "exp":
-                params_constrained[:, idx] = torch.exp(params_unconstrained[:, idx]) + 1e-8
-            return params_constrained
-        raise ValueError(f"Unknown transform type: {transform_type}")
-
-    # TODO: remove
-    def predict_parameters_and_ic(
-        self,
-        x: torch.Tensor,
-    ) -> tuple[ParameterVector, ICVector]:
-        """
-        Predict parameters and initial conditions from trajectory.
-
-        Args:
-            x: Observed time series of shape (in_channels, T) or (B, in_channels, T)
-
-        Returns:
-            params: Parameter vector estimate
-            ic: Initial condition vector estimate
-        """
-        self.eval()
-        with torch.no_grad():
-            if x.ndim == 2:
-                x = x.unsqueeze(0)
-
-            params_unconstrained, ic = self.encoder(x)
-            params_constrained = self._apply_parameter_transform(
-                params_unconstrained, self.parameter_transform_type
-            )
-
-            params_np = params_constrained[0].cpu().numpy()
-            ic_np = ic[0].cpu().numpy()
-
-            params = ParameterVector(values=params_np, n_actions=self.n_actions)
-            ic = ICVector(values=ic_np, n_actions=self.n_actions)
-
-        return params, ic
+        return {"params": params, "ic": ic, "latent_state": latent_state}
 
     def save(self, path: str) -> None:
         """Save model state and config to disk."""

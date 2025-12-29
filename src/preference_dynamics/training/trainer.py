@@ -25,6 +25,7 @@ from preference_dynamics.utils import (
     assemble_checkpoint_path,
     if_logging,
     parse_checkpoint_path,
+    stack_dict_tensors,
     to_device,
 )
 
@@ -272,8 +273,10 @@ class Trainer:
         return predictions
 
     def _evaluate_step(
-        self, batch: dict[str, torch.Tensor]
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, batch: dict[str, torch.Tensor | dict[str, torch.Tensor]]
+    ) -> tuple[
+        torch.Tensor | dict[str, torch.Tensor], torch.Tensor | dict[str, torch.Tensor], torch.Tensor
+    ]:
         """
         Evaluate one batch (forward pass and loss computation).
 
@@ -281,7 +284,7 @@ class Trainer:
             batch: Batch dictionary with "inputs" and "targets" keys
 
         Returns:
-            Tuple of (predictions, targets, loss) torch Tensors
+            Tuple of (predictions, targets, loss) where predictions/targets may be dicts or tensors
         """
 
         predictions = self._predict_step(batch)
@@ -291,7 +294,11 @@ class Trainer:
 
         return predictions, targets, loss
 
-    def _evaluate_epoch(self, dataloader: DataLoader) -> tuple[torch.Tensor, torch.Tensor, float]:
+    def _evaluate_epoch(
+        self, dataloader: DataLoader
+    ) -> tuple[
+        torch.Tensor | dict[str, torch.Tensor], torch.Tensor | dict[str, torch.Tensor], float
+    ]:
         """
         Evaluate one epoch for whole dataset.
 
@@ -320,9 +327,18 @@ class Trainer:
                 n_batches += 1
 
         avg_loss = total_loss / n_batches if n_batches > 0 else 0.0
-        all_predictions = torch.cat(all_predictions, dim=0)
-        all_targets = torch.cat(all_targets, dim=0)
-        return all_predictions, all_targets, avg_loss
+
+        if isinstance(all_predictions[0], dict):
+            out_predictions = stack_dict_tensors(all_predictions)
+        else:
+            out_predictions = torch.cat(all_predictions, dim=0)
+
+        if isinstance(all_targets[0], dict):
+            out_targets = stack_dict_tensors(all_targets)
+        else:
+            out_targets = torch.cat(all_targets, dim=0)
+
+        return out_predictions, out_targets, avg_loss
 
     def evaluate(self, dataloader: DataLoader) -> tuple[torch.Tensor, torch.Tensor, float]:
         """
