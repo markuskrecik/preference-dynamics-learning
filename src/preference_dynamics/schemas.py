@@ -17,6 +17,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from torch import nn
 
 from preference_dynamics.utils import get_diagonal_indices
 
@@ -477,6 +478,39 @@ class TimeSeriesSample(BaseModel):
 # ============================================================================
 
 
+class PINNLossConfig(BaseModel):
+    """
+    Configuration for PINN loss computation.
+
+    Fields:
+        data_weight: Weight for data fitting loss
+        physics_weight: Weight for physics residual loss
+        supervised_weight: Weight for supervised parameter/IC loss (optional)
+    """
+
+    data_weight: float = Field(..., ge=0.0, description="Weight for data fitting loss")
+    physics_weight: float = Field(..., ge=0.0, description="Weight for physics residual loss")
+    supervised_weight: float = Field(
+        default=0.0, ge=0.0, description="Weight for supervised parameter/IC loss"
+    )
+    # collocation: Literal["observed_times", "uniform", "random"] = Field(
+    #     default="observed_times", description="Collocation strategy"
+    # )
+    # non_smooth_observables: bool = Field(
+    #     default=False, description="Whether to use exact piecewise observation mapping"
+    # )
+    # smoothness_temperature: float | None = Field(
+    #     default=None, ge=0.0, description="Temperature parameter for smooth approximations"
+    # )
+
+    @model_validator(mode="after")
+    def validate_weights(self) -> Self:
+        """Validate that at least one weight is positive."""
+        if self.data_weight == 0.0 and self.physics_weight == 0.0:
+            raise ValueError("At least one of data_weight or physics_weight must be > 0")
+        return self
+
+
 class TrainerConfig(BaseModel):
     """
     Configuration object for training hyperparameters.
@@ -493,8 +527,8 @@ class TrainerConfig(BaseModel):
         save_best: Only save best checkpoint (default: True)
     """
 
-    loss_function: Literal["mse", "mae", "huber"] = Field(
-        default="mse", description='Loss function identifier ("mse", "mae", "huber") or callable'
+    loss_function: Literal["mse", "mae", "huber"] | nn.Module = Field(
+        default="mse", description='Loss function identifier ("mse", "mae", "huber") or nn.Module'
     )
     learning_rate: float = Field(default=0.001, gt=0, description="Learning rate")
     num_epochs: int = Field(..., gt=0, description="Number of training epochs")
@@ -518,6 +552,8 @@ class TrainerConfig(BaseModel):
                 f"early_stopping_patience must be > 0 if not None, got {self.early_stopping_patience}"
             )
         return self
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class TrainingHistory(BaseModel):
@@ -569,66 +605,6 @@ class TrainingHistory(BaseModel):
         return self
 
 
-# class ObjectiveConfig(BaseModel):
-#     """
-#     Configuration for inverse PINN training objective.
-
-#     Fields:
-#         data_weight: Weight for data fitting loss
-#         physics_weight: Weight for physics residual loss
-#         supervised_weight: Weight for supervised parameter/IC loss (optional)
-#         collocation: Collocation strategy ("observed_times", "observed_plus_extra")
-#         non_smooth_observables: Whether to use exact piecewise observation mapping
-#         smoothness_temperature: Temperature parameter for smooth approximations
-#     """
-
-#     data_weight: float = Field(..., ge=0.0, description="Weight for data fitting loss")
-#     physics_weight: float = Field(..., ge=0.0, description="Weight for physics residual loss")
-#     supervised_weight: float = Field(
-#         default=0.0, ge=0.0, description="Weight for supervised parameter/IC loss"
-#     )
-#     collocation: Literal["observed_times", "uniform", "random"] = Field(
-#         default="observed_times", description="Collocation strategy"
-#     )
-#     non_smooth_observables: bool = Field(
-#         default=False, description="Whether to use exact piecewise observation mapping"
-#     )
-#     smoothness_temperature: float | None = Field(
-#         default=None, ge=0.0, description="Temperature parameter for smooth approximations"
-#     )
-
-#     @model_validator(mode="after")
-#     def validate_weights(self) -> Self:
-#         """Validate that at least one weight is positive."""
-#         if self.data_weight == 0.0 and self.physics_weight == 0.0:
-#             raise ValueError("At least one of data_weight or physics_weight must be > 0")
-#         return self
-
-
-class PINNLossConfig(BaseModel):
-    """
-    Configuration for PINN loss computation.
-
-    Fields:
-        data_weight: Weight for data fitting loss
-        physics_weight: Weight for physics residual loss
-        supervised_weight: Weight for supervised parameter/IC loss (optional)
-    """
-
-    data_weight: float = Field(..., ge=0.0, description="Weight for data fitting loss")
-    physics_weight: float = Field(..., ge=0.0, description="Weight for physics residual loss")
-    supervised_weight: float = Field(
-        default=0.0, ge=0.0, description="Weight for supervised parameter/IC loss"
-    )
-
-    @model_validator(mode="after")
-    def validate_weights(self) -> Self:
-        """Validate that at least one weight is positive."""
-        if self.data_weight == 0.0 and self.physics_weight == 0.0:
-            raise ValueError("At least one of data_weight or physics_weight must be > 0")
-        return self
-
-
 class RunnerConfig(BaseModel):
     """
     Configuration object for experiment-level settings.
@@ -656,57 +632,57 @@ class RunnerConfig(BaseModel):
 # ============================================================================
 
 
-class ParameterNormalizer(BaseModel):
-    """Statistics for normalizing parameters (supports variable dimensions)."""
+# class ParameterNormalizer(BaseModel):
+#     """Statistics for normalizing parameters."""
 
-    n_actions: int = Field(..., ge=1, description="Number of actions (n)")
+#     n_actions: int = Field(..., ge=1, description="Number of actions (n)")
 
-    mean: NDArray[Literal["4-*"], float] = Field(
-        ..., description="Mean parameter values (2n + 2n²,)"
-    )
+#     mean: NDArray[Literal["4-*"], float] = Field(
+#         ..., description="Mean parameter values (2n + 2n²,)"
+#     )
 
-    std: NDArray[Literal["4-*"], float] = Field(..., description="Standard deviation (2n + 2n²,)")
+#     std: NDArray[Literal["4-*"], float] = Field(..., description="Standard deviation (2n + 2n²,)")
 
-    min: NDArray[Literal["4-*"], float] = Field(..., description="Minimum values (2n + 2n²,)")
+#     min: NDArray[Literal["4-*"], float] = Field(..., description="Minimum values (2n + 2n²,)")
 
-    max: NDArray[Literal["4-*"], float] = Field(..., description="Maximum values (2n + 2n²,)")
+#     max: NDArray[Literal["4-*"], float] = Field(..., description="Maximum values (2n + 2n²,)")
 
-    @model_validator(mode="after")
-    def validate_shapes(self) -> Self:
-        """Validate that all arrays have correct shape for n_actions."""
-        n: int = self.n_actions
-        expected_length = 2 * n + 2 * n**2
+#     @model_validator(mode="after")
+#     def validate_shapes(self) -> Self:
+#         """Validate that all arrays have correct shape for n_actions."""
+#         n: int = self.n_actions
+#         expected_length = 2 * n + 2 * n**2
 
-        for field_name in ["mean", "std", "min", "max"]:
-            arr = getattr(self, field_name)
-            if arr.shape != (expected_length,):
-                raise ValueError(
-                    f"{field_name} for n={n} must have shape ({expected_length},), got {arr.shape}"
-                )
+#         for field_name in ["mean", "std", "min", "max"]:
+#             arr = getattr(self, field_name)
+#             if arr.shape != (expected_length,):
+#                 raise ValueError(
+#                     f"{field_name} for n={n} must have shape ({expected_length},), got {arr.shape}"
+#                 )
 
-        return self
+#         return self
 
-    def normalize(self, params: NDArray[Literal["4-*"], float]) -> NDArray[Literal["4-*"], float]:
-        """Standardize parameters to zero mean, unit variance."""
-        return (params - self.mean) / (self.std + 1e-8)
+#     def normalize(self, params: NDArray[Literal["4-*"], float]) -> NDArray[Literal["4-*"], float]:
+#         """Standardize parameters to zero mean, unit variance."""
+#         return (params - self.mean) / (self.std + 1e-8)
 
-    def denormalize(
-        self, params_normalized: NDArray[Literal["4-*"], float]
-    ) -> NDArray[Literal["4-*"], float]:
-        """Convert back to original scale."""
-        return params_normalized * (self.std + 1e-8) + self.mean
+#     def denormalize(
+#         self, params_normalized: NDArray[Literal["4-*"], float]
+#     ) -> NDArray[Literal["4-*"], float]:
+#         """Convert back to original scale."""
+#         return params_normalized * (self.std + 1e-8) + self.mean
 
-    def min_max_normalize(
-        self, params: NDArray[Literal["4-*"], float]
-    ) -> NDArray[Literal["4-*"], float]:
-        """Scale to [0, 1]."""
-        return (params - self.min) / (self.max - self.min + 1e-8)
+#     def min_max_normalize(
+#         self, params: NDArray[Literal["4-*"], float]
+#     ) -> NDArray[Literal["4-*"], float]:
+#         """Scale to [0, 1]."""
+#         return (params - self.min) / (self.max - self.min + 1e-8)
 
-    def min_max_denormalize(
-        self, params_normalized: NDArray[Literal["4-*"], float]
-    ) -> NDArray[Literal["4-*"], float]:
-        """Convert back from [0, 1]."""
-        return params_normalized * (self.max - self.min + 1e-8) + self.min
+#     def min_max_denormalize(
+#         self, params_normalized: NDArray[Literal["4-*"], float]
+#     ) -> NDArray[Literal["4-*"], float]:
+#         """Convert back from [0, 1]."""
+#         return params_normalized * (self.max - self.min + 1e-8) + self.min
 
 
 # ============================================================================
@@ -714,32 +690,32 @@ class ParameterNormalizer(BaseModel):
 # ============================================================================
 
 
-class CollocationConfig(BaseModel):
-    """
-    Configuration for collocation strategy (where physics residual is evaluated).
+# class CollocationConfig(BaseModel):
+#     """
+#     Configuration for collocation strategy (where physics residual is evaluated).
 
-    Fields:
-        strategy: Collocation strategy ("observed_times", "uniform", "random")
-        n_collocation_points: Number of additional collocation points (if strategy != "observed_times")
-    """
+#     Fields:
+#         strategy: Collocation strategy ("observed_times", "uniform", "random")
+#         n_collocation_points: Number of additional collocation points (if strategy != "observed_times")
+#     """
 
-    strategy: Literal["observed_times", "uniform", "random"] = Field(
-        default="observed_times", description="Collocation strategy"
-    )
-    n_collocation_points: int | None = Field(
-        default=None,
-        ge=1,
-        description="Number of additional collocation points (required if strategy != 'observed_times')",
-    )
+#     strategy: Literal["observed_times", "uniform", "random"] = Field(
+#         default="observed_times", description="Collocation strategy"
+#     )
+#     n_collocation_points: int | None = Field(
+#         default=None,
+#         ge=1,
+#         description="Number of additional collocation points (required if strategy != 'observed_times')",
+#     )
 
-    @model_validator(mode="after")
-    def validate_collocation_points(self) -> Self:
-        """Validate that n_collocation_points is provided when needed."""
-        if self.strategy != "observed_times" and self.n_collocation_points is None:
-            raise ValueError(
-                f"n_collocation_points must be provided when strategy is '{self.strategy}'"
-            )
-        return self
+#     @model_validator(mode="after")
+#     def validate_collocation_points(self) -> Self:
+#         """Validate that n_collocation_points is provided when needed."""
+#         if self.strategy != "observed_times" and self.n_collocation_points is None:
+#             raise ValueError(
+#                 f"n_collocation_points must be provided when strategy is '{self.strategy}'"
+#             )
+#         return self
 
 
 # class LossScheduleConfig(BaseModel):

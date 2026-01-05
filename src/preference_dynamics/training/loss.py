@@ -362,68 +362,84 @@ class PINNLoss(nn.Module):  # type: ignore
         Compute physics residual loss.
 
         Args:
-            input: Dictionary with "state" key (B, 2n, T)
+            input: Dictionary with "x" key (B, 2n, T)
             target: Dictionary with "t" key (B, T) with requires_grad=True
 
         Returns:
             Physics loss scalar
         """
-        time_points = target["t"]
-        state = input["state"]
+        time_points = input["t"]
+        state = input["x"]
+
+        if time_points.shape != state[..., 0, :].shape:
+            raise ValueError(
+                f"Time points {time_points.shape} and state {state.shape} must share batch and time dimensions."
+            )
         B, channels, T = state.shape
-        n_actions = channels // 2
+        n = channels // 2
 
-        time_points.requires_grad_(True)
+        state_T = state.transpose(1, 2)  # (B, T, 2n)
 
-        state_T = state.transpose(1, 2)
-
+        # d_latent_state_T = torch.zeros_like(state_T)
         d_latent_state = []
-        for t_idx in range(T):
-            state_t = state_T[:, t_idx, :]
-            grad_outputs = torch.ones_like(state_t)
-            grad_t = torch.autograd.grad(
-                outputs=state_t,
-                inputs=time_points,
-                grad_outputs=grad_outputs,
-                # is_grads_batched=True,
-                create_graph=True,
+        for j in range(state_T.shape[-1]):
+            grad_j = torch.autograd.grad(
+                outputs=state_T[..., j],  # (B, T)
+                inputs=time_points,  # (B, T)
+                grad_outputs=torch.ones_like(state_T[..., j]),
                 retain_graph=True,
-                allow_unused=True,
+                create_graph=True,
             )[0]
+            d_latent_state.append(grad_j)
+            # d_latent_state_T[..., j] = grad_j
 
-            if grad_t is None:
-                grad_t = torch.zeros(B, channels, device=state.device)
+            # d_latent_state = []
+            # for t_idx in range(T):
+            #     state_t = state_T[:, t_idx, :]
+            #     grad_outputs = torch.ones_like(state_t)
+            #     grad_t = torch.autograd.grad(
+            #         outputs=state_t,
+            #         inputs=time_points,
+            #         grad_outputs=grad_outputs,
+            #         # is_grads_batched=True,
+            #         create_graph=True,
+            #         retain_graph=True,
+            #         allow_unused=True,
+            #     )[0]
+
+            # if grad_t is None:
+            # grad_t = torch.zeros(B, channels, device=state.device)
             # elif grad_t.ndim == 1:
             #     grad_t = grad_t.unsqueeze(0).expand(B, -1)
             # elif grad_t.shape[0] == 1:
             #     grad_t = grad_t.expand(B, -1)
 
-            d_latent_state.append(grad_t)
-
-        d_latent_state = torch.stack(d_latent_state, dim=1)
+            # d_latent_state.append(grad_t)
+        d_latent_state_T = torch.stack(d_latent_state, dim=-1)
+        # d_latent_state = d_latent_state_T.transpose(1, 2)
 
         params = input["params"]
-        g = params[:, :n_actions]
-        mu = params[:, n_actions : 2 * n_actions]
-        Pi_flat = params[:, 2 * n_actions : 2 * n_actions + n_actions**2]
-        Gamma_flat = params[:, 2 * n_actions + n_actions**2 :]
-        Pi = Pi_flat.reshape(B, n_actions, n_actions)
-        Gamma = Gamma_flat.reshape(B, n_actions, n_actions)
+        g = params[..., :n]
+        mu = params[..., n : 2 * n]
+        Pi_flat = params[..., 2 * n : 2 * n + n**2]
+        Gamma_flat = params[..., 2 * n + n**2 :]
+        Pi = Pi_flat.reshape(B, n, n)
+        Gamma = Gamma_flat.reshape(B, n, n)
 
         mu_expanded = mu.unsqueeze(1).expand(B, T, -1)
         g_expanded = g.unsqueeze(1).expand(B, T, -1)
 
-        d_latent_state_pred = preference_dynamics_rhs_torch(
+        d_latent_state_T_pred = preference_dynamics_rhs_torch(
             t=time_points,
             state=state_T,
-            n_actions=n_actions,
+            n_actions=n,
             g=g_expanded,
             mu=mu_expanded,
             Pi=Pi,
             Gamma=Gamma,
         )
 
-        return nn.functional.mse_loss(d_latent_state, d_latent_state_pred)
+        return nn.functional.mse_loss(d_latent_state_T, d_latent_state_T_pred)
 
     def data_loss(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
@@ -458,32 +474,39 @@ class PINNLoss(nn.Module):  # type: ignore
         Compute total PINN loss.
 
         Args:
-            input: Dictionary with "params", "ic", "latent_state" keys
-            target: Dictionary with "params", "ic", "state", "t" keys
+            input: Dictionary with "latent_x" and optional "params", "ic" keys
+            target: Dictionary with "x", "t", "params", "ic" keys
             epoch: Current epoch number (for logging)
 
         Returns:
             Total loss scalar
         """
+        if not isinstance(input, dict) or not isinstance(target, dict):
+            raise ValueError("Input and target must be dictionaries")
         loss = {}
         input_copy = input.copy()
 
-        n = len(input["ic"][0]) // 2
-        mu = input["params"][:, n : 2 * n]
-        latent_state = input["latent_state"]
+        n = target["x"].shape[-2] // 2
+        # Use predicted params for inverse PINN, and data for surrogate:
+        surrogate_mode = False
+        if "params" not in input:
+            surrogate_mode = True
+            input_copy["params"] = target["params"]
+        mu = input_copy["params"][..., n : 2 * n]
+        latent_state = input_copy["latent_x"]
         B, channels, T = latent_state.shape
         latent_state_T = latent_state.transpose(1, 2)
-        mu_expanded = mu.unsqueeze(1).expand(B, T, -1)
+        mu_expanded = mu.unsqueeze(-1).expand(B, T, -1)
 
         state_T = compute_observables_torch(latent_state_T, mu_expanded, n, smooth=False)
-        state = state_T.transpose(1, 2)
-        input_copy["state"] = state
+        state = torch.cat(state_T, dim=-1).transpose(1, 2)
+        input_copy["x"] = state
 
-        loss["data"] = self.data_loss(state, target["state"])
+        loss["data"] = self.data_loss(state, target["x"])
 
         loss["physics"] = self.physics_loss(input_copy, target)
 
-        if "params" in target and "ic" in target:
+        if not surrogate_mode:
             input_params_ic = torch.cat([input["params"], input["ic"]], dim=1)
             target_params_ic = torch.cat([target["params"], target["ic"]], dim=1)
             loss["supervised"] = self.supervised_loss(input_params_ic, target_params_ic)

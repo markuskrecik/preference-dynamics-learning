@@ -11,7 +11,7 @@ class ModelConfig(BaseModel):
 
     model_type: str = Field(..., description="Type of model architecture")
     model_name: str = Field(..., description="Model identifier")
-    in_channels: int = Field(..., gt=0, description="Number of input channels")
+    # in_channels: int = Field(..., gt=0, description="Number of input channels")
 
 
 class CNN1DConfig(ModelConfig):
@@ -177,13 +177,11 @@ class SurrogateConfig(ModelConfig):
 
     model_type: str = "surrogate"
     model_name: str = Field(..., description="Model identifier")
-    in_dims: tuple[int, int] = Field(
-        ..., description="Input dimensions as (channels, length) tuple"
-    )
+    in_dims: Sequence[int] = Field(..., description="Input dimensions as (channels, length) tuple")
     hidden_dims: Sequence[int] = Field(
         ..., min_length=1, description="Hidden layer dimensions for MLP"
     )
-    out_dims: tuple[int, int] = Field(
+    out_dims: Sequence[int] = Field(
         ..., description="Output dimensions as (channels, length) tuple"
     )
     dropout: float = Field(default=0.0, ge=0.0, le=1.0, description="Dropout rate")

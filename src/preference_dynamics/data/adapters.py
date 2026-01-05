@@ -18,13 +18,13 @@ class InputAdapter(Protocol):
 
     def get_inputs(self, sample: Any) -> dict[str, torch.Tensor]: ...
 
-    def n_inputs(self, sample: Any) -> int: ...
+    def n_inputs(self, sample: Any) -> int | tuple[int, ...]: ...
 
 
 class TargetAdapter(Protocol):
     def get_targets(self, sample: Any) -> torch.Tensor | dict[str, torch.Tensor]: ...
 
-    def n_targets(self, sample: Any) -> int: ...
+    def n_targets(self, sample: Any) -> int | tuple[int, ...]: ...
 
 
 class StateInputAdapter:
@@ -77,8 +77,8 @@ class StateTimeInputAdapter:
 
     def get_inputs(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
         x = torch.from_numpy(sample.time_series.copy()).float()
-        time_grid = torch.from_numpy(sample.time_points.copy()).float()
-        return {"x": x, "t": time_grid}
+        time_points = torch.from_numpy(sample.time_points.copy()).float()
+        return {"x": x, "t": time_points}
 
     def n_inputs(self, sample: TimeSeriesSample) -> int:
         return int(self.get_inputs(sample)["x"].shape[0])
@@ -95,11 +95,12 @@ class ParamICTimeInputAdapter:
     def get_inputs(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
         parameters = torch.from_numpy(sample.parameters.values.copy()).float()
         initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
-        time_grid = torch.from_numpy(sample.time_points.copy()).float()
-        return {"params": parameters, "ic": initial_conditions, "t": time_grid}
+        time_points = torch.from_numpy(sample.time_points.copy()).float()
+        return {"params": parameters, "ic": initial_conditions, "t": time_points}
 
-    def n_inputs(self, sample: TimeSeriesSample) -> int:
-        return int(self.get_inputs(sample)["t"].shape[0])
+    def n_inputs(self, sample: TimeSeriesSample) -> tuple[int, ...]:
+        inputs = self.get_inputs(sample)
+        return tuple(int(i.shape[0]) for i in inputs.values())
 
 
 class ParameterTargetAdapter:
@@ -152,15 +153,16 @@ class ParamICStateTimeTargetAdapter:
     Adapter for parameter, initial conditions, state and time target.
 
     Returns:
-        dict with keys "params", "ic", "state", "t"
+        dict with keys "params", "ic", "x", "t"
     """
 
     def get_targets(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
         parameters = torch.from_numpy(sample.parameters.values.copy()).float()
         initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
         state = torch.from_numpy(sample.time_series.copy()).float()
-        time_grid = torch.from_numpy(sample.time_points.copy()).float()
-        return {"params": parameters, "ic": initial_conditions, "state": state, "t": time_grid}
+        time_points = torch.from_numpy(sample.time_points.copy()).float()
+        return {"params": parameters, "ic": initial_conditions, "x": state, "t": time_points}
 
-    def n_targets(self, sample: TimeSeriesSample) -> int:
-        return int(self.get_targets(sample)["state"].shape[0])
+    def n_targets(self, sample: TimeSeriesSample) -> tuple[int, ...]:
+        targets = self.get_targets(sample)
+        return tuple(int(t.shape[0]) for t in targets.values())

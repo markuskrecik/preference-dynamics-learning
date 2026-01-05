@@ -113,10 +113,10 @@ class TimeSeriesEncoder(PredictorModel):
 
 class Surrogate(PredictorModel):
     """
-    Trajectory surrogate that maps (t, θ̂, x̂₀) → x̂(t).
+    Trajectory surrogate that maps (θ, x₀, t) → x̂(t).
 
     Architecture:
-        - MLP that takes concatenated [t, θ̂, x̂₀] as input per time point
+        - MLP that takes concatenated [θ, x₀, t] as input
         - Outputs latent state x̂(t) = [v̂(t), m̂(t)]
     """
 
@@ -127,18 +127,19 @@ class Surrogate(PredictorModel):
         """
         super().__init__()
         self._config = config
-        out_channels = config.out_dims[0]
+        # in_dim = sum(config.in_dims)
+        out_dim = config.out_dims[-1] * config.out_dims[-2]
 
         layers = []
-        prev_dim = config.in_dims[0]
+        # prev_dim = in_dim
         for hidden_dim in config.hidden_dims:
-            layers.append(nn.Linear(prev_dim, hidden_dim))
+            layers.append(nn.LazyLinear(hidden_dim))
             layers.append(nn.GELU())
             if config.dropout > 0:
                 layers.append(nn.Dropout(config.dropout))
-            prev_dim = hidden_dim
+            # prev_dim = hidden_dim
 
-        layers.append(nn.Linear(prev_dim, out_channels))
+        layers.append(nn.LazyLinear(out_dim))
         self.mlp = nn.Sequential(*layers)
 
     def forward(
@@ -146,27 +147,35 @@ class Surrogate(PredictorModel):
         t: torch.Tensor,
         params: torch.Tensor,
         ic: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> dict[str, torch.Tensor]:
         """
         Predict latent state at time t given parameters and initial conditions.
 
         Args:
-            t: Time points of shape (B, T)
-            params: Parameter estimates of shape (B, n_params)
-            ic: Initial condition estimates of shape (B, n_ic)
+            t: Time points of shape (..., T)
+            params: Parameters of shape (..., n_params)
+            ic: Initial conditions of shape (..., n_ic)
 
         Returns:
-            latent_state: Latent state [v̂(t), m̂(t)] of shape (B, 2n, T)
+            latent_state: Latent state [v̂(t), m̂(t)] of shape (..., 2n, T)
         """
-        B, T = t.shape
-        params_expanded = params.unsqueeze(1).expand(B, T, -1)
-        ic_expanded = ic.unsqueeze(1).expand(B, T, -1)
-        t_expanded = t.unsqueeze(-1)
 
-        x = torch.cat([t_expanded, params_expanded, ic_expanded], dim=-1)
-        latent_state = self.mlp(x)
+        # print(t.shape, params.shape, ic.shape)
+        t_shape = tuple(t.shape)
+        if len(t_shape) == 1:
+            t_shape = (1, *t_shape)
+        t.requires_grad_(True)
+        # params_expanded = params.unsqueeze(-2).expand(*t_shape, -1)
+        # ic_expanded = ic.unsqueeze(-2).expand(*t_shape, -1)
+        # t_expanded = t.unsqueeze(-1)
+        # print(params_expanded.shape, ic_expanded.shape, t_expanded.shape)
+        # x = torch.cat([params_expanded, ic_expanded, t_expanded], dim=-1)
+        x = torch.cat([params, ic, t], dim=-1)
 
-        return latent_state.transpose(1, 2)
+        x = self.mlp(x)
+        x = x.view(*t_shape, -1)  # (B, T, 2n)
+
+        return {"latent_x": x.transpose(1, 2), "t": t}
 
     @property
     def config(self) -> SurrogateConfig:
@@ -220,14 +229,12 @@ class InversePINNPredictor(PredictorModel):
             Dictionary with:
                 - params: Parameter estimates of shape (B, 2n(n+1))
                 - ic: Initial condition estimates of shape (B, 2n)
-                - latent_state: Latent state trajectory of shape (B, 2n, T)
+                - latent_x: Latent state trajectory of shape (B, 2n, T)
         """
         params, ic = self.encoder(x)
-        t.unsqueeze_(-1)
-
         latent_state = self.surrogate(t, params, ic)
 
-        return {"params": params, "ic": ic, "latent_state": latent_state}
+        return {"params": params, "ic": ic, "latent_x": latent_state, "t": t}
 
     def save(self, path: str) -> None:
         """Save model state and config to disk."""
