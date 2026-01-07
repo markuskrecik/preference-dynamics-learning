@@ -8,12 +8,12 @@ import torch
 from torch import nn
 
 from preference_dynamics.models.base import PredictorModel
-from preference_dynamics.models.schemas import CNN1DFeatConfig
+from preference_dynamics.models.schemas import CNN1DResidualConfig
 
 
-class CNN1DFeatPredictor(PredictorModel):
+class CNN1DResidualPredictor(PredictorModel):
     """
-    1d CNN model for predicting parameters from time series and features.
+    1d CNN model for predicting parameters from residual time series and features.
 
     Architecture:
         - Multiple 1d convolutional blocks with ReLU activation
@@ -22,12 +22,21 @@ class CNN1DFeatPredictor(PredictorModel):
         - Fully connected layers to output parameter predictions
     """
 
-    def __init__(self, config: CNN1DFeatConfig) -> None:
+    def __init__(self, config: CNN1DResidualConfig) -> None:
         PredictorModel.__init__(self)
 
         self._config = config
 
         in_channels = config.in_channels
+        steady_state_channels = in_channels
+        out_dim = config.out_dim
+        hidden_dims = config.hidden_dims
+
+        self.steady_state_fc = nn.Sequential(
+            nn.LazyLinear(in_channels),
+            nn.LeakyReLU(inplace=True),
+            # nn.Dropout(config.dropout),
+        )
 
         self.conv_blocks = nn.ModuleList()
         for out_channels, kernel_size in zip(config.filters, config.kernel_sizes, strict=True):
@@ -52,27 +61,32 @@ class CNN1DFeatPredictor(PredictorModel):
         )
 
         self.fc_layers = nn.ModuleList()
-        for feature_dim in config.features:
+        for hidden_dim in hidden_dims:
             fc_layer = nn.Sequential(
-                nn.LazyLinear(feature_dim),
+                nn.LazyLinear(hidden_dim),
                 nn.LeakyReLU(inplace=True),
                 # nn.Dropout(config.dropout),
             )
             self.fc_layers.append(fc_layer)
+        # steady state prediction concatenated at the end
+        self.fc_layers.append(nn.LazyLinear(out_dim - steady_state_channels))
 
     def forward(self, x: torch.Tensor, x_feat: torch.Tensor) -> torch.Tensor:
-        for conv_block in self.conv_blocks:
-            x = conv_block(x)  # (batch, filters, time)
-        x = self.global_pool(x)  # (batch, filters, 1)
-        x = x.squeeze(-1)  # (batch, filters)
-
         x_feat = torch.nan_to_num(x_feat, nan=0.0)
+        x_ss = torch.cat([x[..., -1], x_feat], dim=-1)
+        c_flat = self.steady_state_fc(x_ss)  # (batch, in_channels)
+        c = c_flat.unsqueeze(-1).expand_as(x)  # (batch, in_channels, time)
+        r = x - c
 
-        x = torch.cat([x, x_feat], dim=-1)  # (batch, filters + feature_dim)
+        for conv_block in self.conv_blocks:
+            r = conv_block(r)  # (batch, filters, time)
+        r = self.global_pool(r)  # (batch, filters, 1)
+        r = r.squeeze(-1)  # (batch, filters)
 
         for fc_layer in self.fc_layers:
-            x = fc_layer(x)  # (batch, feature_dim)
+            r = fc_layer(r)  # (batch, hidden_dim)
 
+        x = torch.cat([r, c_flat], dim=-1)
         return x
 
     def save(self, path: str) -> None:
@@ -109,9 +123,9 @@ class CNN1DFeatPredictor(PredictorModel):
         self.eval()
 
     @property
-    def config(self) -> CNN1DFeatConfig:
+    def config(self) -> CNN1DResidualConfig:
         """
-        Configuration for the CNN1D predictor model.
+        Configuration for the CNN1D residual predictor model.
         """
         return self._config
 

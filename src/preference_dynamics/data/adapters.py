@@ -98,6 +98,19 @@ class ParameterICTargetAdapter:
         return int(self.get_targets(sample).shape[0])
 
 
+class ForecastTargetAdapter:
+    """
+    Adapter for forecast values target.
+    """
+
+    def get_targets(self, sample: TimeSeriesSample) -> torch.Tensor:
+        forecast_values = torch.from_numpy(np.array(sample.features["forecast_values"])).float()
+        return forecast_values.flatten()
+
+    def n_targets(self, sample: TimeSeriesSample) -> int:
+        return int(self.get_targets(sample).shape[0])
+
+
 class ParameterICForecastTargetAdapter:
     """
     Adapter for parameter, initial conditions and forecast values target.

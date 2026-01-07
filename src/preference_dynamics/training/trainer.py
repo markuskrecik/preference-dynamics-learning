@@ -101,7 +101,6 @@ class Trainer:
 
         self.device = self._init_device(config.device)
         self.model = model
-        self.optimizer = self._init_optimizer()
         self.criterion = self._init_loss_function(config.loss_function)
 
         self._set_random_seed(config.seed)
@@ -119,7 +118,7 @@ class Trainer:
             Adam optimizer configured with learning_rate and weight_decay from config
         """
         return torch.optim.Adam(
-            params=self.model.parameters(),
+            params=filter(lambda p: p.requires_grad, self.model.parameters()),
             lr=self.config.learning_rate,
             weight_decay=self.config.weight_decay,
         )
@@ -429,6 +428,7 @@ class Trainer:
         epoch_times = []
         best_epoch = self.current_epoch
         self.model = self._init_model(self.model, train_dataloader)
+        self.optimizer = self._init_optimizer()
 
         logger.info(
             f"Starting training for {self.config.num_epochs} epochs with run_id={self.run_id}"
@@ -639,6 +639,7 @@ class Trainer:
 
         # Restore optimizer
         if checkpoint.get("optimizer_state_dict"):
+            self.optimizer = self._init_optimizer()
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
         # Restore training state

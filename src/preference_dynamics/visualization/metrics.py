@@ -221,7 +221,7 @@ def plot_metrics(
             col=1,
         )
         fig.update_xaxes(title_text="Metric", row=1, col=1, tickangle=-45)
-        fig.update_yaxes(title_text="Value", row=1, col=1, autorangeoptions_include=1.1)
+        fig.update_yaxes(title_text="Value", row=1, col=1, range=[0, 1.1])
 
     row_idx = 2
     col_idx = 1
@@ -259,7 +259,7 @@ def plot_metrics(
             ticktext=tick_labels,
             tickangle=-45,
         )
-        fig.update_yaxes(title_text=display_name, row=row_idx, col=col_idx)
+        fig.update_yaxes(title_text=display_name, row=row_idx, col=col_idx, range=[0, 1.1])
 
         col_idx += 1
         if col_idx > n_cols:
