@@ -24,7 +24,7 @@ I will use **convolutional neural networks** (CNNs) and **physics informed neura
 
 The project consists of a feature-rich experimentation suite for model training using pytorch, and a series of notebooks for synthetic data generation, exploration, feature engineering and training.
 
-The experimentation suite includes:
+### Experimentation suite
 
 **Data Generation & Validation:**
 - Parallel ODE solver with joblib for efficient batch generation of synthetic data
@@ -40,6 +40,7 @@ The experimentation suite includes:
     - Initial condition extractor
     - Data cleaning transformer
     - Sample-level and group-level normalization with statistics tracking
+- Multiple `InputAdapter` and `TargetAdapter`s for flexible model inputs and targets specification
 - Automatic caching of preprocessed data for fast iteration
 - Deterministic train/val/test splitting with seed control
 
@@ -69,6 +70,16 @@ The experimentation suite includes:
 
 
 *Why not pytorch lightning?* Of course pytorch lightning is incredibly convenient, but it's not the industry standard. I rather want to demonstrate fluency with vanilla pytorch and show off a well-designed custom implementation with full control over model training and tracking.
+
+### Notebooks
+
+View the notebooks in nbviewer:
+- [`notebooks/10_data_generation.ipynb`](https://nbviewer.org/github/markuskrecik/preference-dynamics-learning/blob/main/notebooks/10_data_generation.ipynb): Synthetic data generation
+- [`notebooks/20_data_exploration.ipynb`](https://nbviewer.org/github/markuskrecik/preference-dynamics-learning/blob/main/notebooks/20_data_exploration.ipynb): Data exploration, cleaning, and visualization
+- [`notebooks/30_feature_engineering.ipynb`](https://nbviewer.org/github/markuskrecik/preference-dynamics-learning/blob/main/notebooks/30_feature_engineering.ipynb): Feature engineering & baseline linear regression model
+- [`notebooks/40_training_cnn_n1.ipynb`](https://nbviewer.org/github/markuskrecik/preference-dynamics-learning/blob/main/notebooks/40_training_cnn_n1.ipynb): Naive 1d CNN model training, optimization, and evaluation for n=1 action
+- [`notebooks/41_training_cnn_n1_residual.ipynb`](https://nbviewer.org/github/markuskrecik/preference-dynamics-learning/blob/main/notebooks/41_training_cnn_n1_residual.ipynb): Residual 1d CNN model training, optimization, and evaluation for n=1 action
+
 
 ### Model Architectures
 
@@ -123,8 +134,8 @@ uv run jupyter lab
 2. Explore Data: `notebooks/20_data_exploration.ipynb`
 3. Feature Engineering & Linear Regression: `notebooks/30_feature_engineering.ipynb`
 4. CNN Model training and evaluation:
-    1. for n=1 action: `notebooks/40_training_cnn_n1.ipynb`
-    2. for n=2 actions: `notebooks/41_training_cnn_n2.ipynb`
+    - for n=1 action: `notebooks/40_training_cnn_n1.ipynb`
+    - for n=1 action with residual architecture: `notebooks/41_training_cnn_n1_residual.ipynb`
 
 #### Experiment Tracking
 
@@ -176,8 +187,12 @@ preference-dynamics-learning/
 │
 ├── data/                   # Generated data (not in git)
 │   ├── n1/                 # Data for n=1 actions
+│   │   ├── raw/
+│   │   └── processed/
 │   ├── n2/                 # Data for n=2 actions
+│   │   └── ...
 │   └── n3/                 # Data for n=3 actions
+│   │   └── ...
 │
 ├── checkpoints/            # Trainer state checkpoints (not in git)
 └── mlruns/                 # MLflow model checkpoints (not in git)
