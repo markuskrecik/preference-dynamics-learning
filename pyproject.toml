@@ -3,7 +3,7 @@ name = "preference-dynamics-learning"
 version = "0.1.0"
 description = "ML research project for solving inverse problem of learning parameters of nonlinear preference dynamics ODE systems from time series data"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 license = { text = "GNU General Public License v3 (GPLv3)" }
 authors = [
     { name = "Markus Krecik", email = "markus.krecik@proton.me" }
@@ -14,7 +14,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
@@ -61,6 +61,8 @@ dependencies = [
     "pip>=25.3", # Only to have mlflow stop complaining
     # Other
     "rich>=14.2.0",
+    "sagemaker>=2.255.0",
+    "awscli>=1.44.14",
 ]
 
 [dependency-groups]
@@ -128,7 +130,7 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true

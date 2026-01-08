@@ -9,6 +9,8 @@ from optuna.trial import FixedTrial, FrozenTrial, Trial
 
 type TrialLike = Trial | FrozenTrial | FixedTrial
 
+T = TypeVar("T")
+
 
 def num_vars(n: int) -> int:
     """
@@ -213,9 +215,6 @@ def assemble_checkpoint_path(
         raise ValueError("Too many subdirectories provided.")
 
     return Path(*out)
-
-
-T = TypeVar("T")
 
 
 def to_device[T](data: T, device: torch.device) -> T:

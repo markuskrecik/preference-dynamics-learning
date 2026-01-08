@@ -62,6 +62,9 @@ The project consists of a feature-rich experimentation suite for model training 
 - Customizable parameter suggestion via subclassing
 - Multi-objective optimization support (minimize/maximize multiple metrics)
 
+**Sagemaker:**
+- Scripts for training and deploying the residual CNN model on Sagemaker
+
 **Code Quality & Architecture:**
 - Type-safe extensive configuration for all classes using Pydantic schemas
 - Follows software engineering best practices with protocol-based abstractions and dependency injection, comprehensive testing, and thorough documentation
@@ -79,7 +82,7 @@ View the notebooks in nbviewer:
 - [`notebooks/30_feature_engineering.ipynb`](https://nbviewer.org/github/markuskrecik/preference-dynamics-learning/blob/main/notebooks/30_feature_engineering.ipynb): Feature engineering & baseline linear regression model
 - [`notebooks/40_training_cnn_n1.ipynb`](https://nbviewer.org/github/markuskrecik/preference-dynamics-learning/blob/main/notebooks/40_training_cnn_n1.ipynb): Naive 1d CNN model training, optimization, and evaluation for n=1 action
 - [`notebooks/41_training_cnn_n1_residual.ipynb`](https://nbviewer.org/github/markuskrecik/preference-dynamics-learning/blob/main/notebooks/41_training_cnn_n1_residual.ipynb): Residual 1d CNN model training, optimization, and evaluation for n=1 action
-
+- [`notebooks/workbench/60_sagemaker.ipynb`](https://nbviewer.org/github/markuskrecik/preference-dynamics-learning/blob/main/notebooks/workbench/60_sagemaker.ipynb): Sagemaker notebook for training and deploying the model.
 
 ### Model Architectures
 

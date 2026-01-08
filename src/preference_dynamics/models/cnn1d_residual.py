@@ -89,7 +89,7 @@ class CNN1DResidualPredictor(PredictorModel):
         x = torch.cat([r, c_flat], dim=-1)
         return x
 
-    def save(self, path: str) -> None:
+    def save(self, path: str | Path) -> None:
         """
         Save model state and config to disk.
 
@@ -109,7 +109,7 @@ class CNN1DResidualPredictor(PredictorModel):
 
         torch.save(checkpoint, save_path)
 
-    def load(self, path: str) -> None:
+    def load(self, path: str | Path) -> None:
         """
         Load model state from disk.
 
