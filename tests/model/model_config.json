@@ -1,0 +1,1 @@
+{"model_type":"cnn1d_residual","model_name":"cnn1d_residual_test","in_channels":2,"filters":[1],"kernel_sizes":[1],"hidden_dims":[1],"out_dim":8,"dropout":0.1}

@@ -1,0 +1,63 @@
+# Pre-commit hooks for code quality
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Ruff for linting and formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.5
+    hooks:
+      # Run linter
+      - id: ruff
+        args: [--fix, --config=pyproject.toml]
+        name: ruff-lint
+      # Run formatter
+      - id: ruff-format
+        name: ruff-format
+
+  # Type checking with mypy
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        name: mypy
+        additional_dependencies:
+          - types-PyYAML
+          - pandas-stubs
+          - pydantic
+        args: [--ignore-missing-imports, --strict]
+        exclude: ^(tests/|notebooks/)
+
+  # Basic file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: trim-trailing-whitespace
+      - id: end-of-file-fixer
+        name: fix-end-of-file
+      - id: check-yaml
+        name: check-yaml
+      - id: check-toml
+        name: check-toml
+      - id: check-json
+        name: check-json
+      - id: check-added-large-files
+        name: check-large-files
+        args: [--maxkb=5000]
+      - id: check-merge-conflict
+        name: check-merge-conflict
+      - id: detect-private-key
+        name: detect-private-keys
+
+  # Pytest (fast unit tests only)
+  - repo: local
+    hooks:
+      - id: pytest-fast
+        name: pytest-fast-tests
+        entry: pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: [tests/unit/, -v, -m, "not slow", --tb=short]
+        stages: [pre-commit]
