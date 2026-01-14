@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 from preference_dynamics.schemas import TimeSeriesSample
+from preference_dynamics.solver.torch_equations import preference_dynamics_rhs_torch
 
 
 class InputAdapter(Protocol):
@@ -18,13 +19,13 @@ class InputAdapter(Protocol):
 
     def get_inputs(self, sample: Any) -> dict[str, torch.Tensor]: ...
 
-    def n_inputs(self, sample: Any) -> int: ...
+    def n_inputs(self, sample: Any) -> int | tuple[int, ...]: ...
 
 
 class TargetAdapter(Protocol):
     def get_targets(self, sample: Any) -> torch.Tensor | dict[str, torch.Tensor]: ...
 
-    def n_targets(self, sample: Any) -> int: ...
+    def n_targets(self, sample: Any) -> int | tuple[int, ...]: ...
 
 
 class StateInputAdapter:
@@ -68,6 +69,39 @@ class StateFeatureInputAdapter:
 
     def n_inputs(self, sample: TimeSeriesSample) -> int:
         return int(self.get_inputs(sample)["x"].shape[0])
+
+
+class StateTimeInputAdapter:
+    """
+    Adapter for state and time input. Compatible with `model.forward(x, t)`.
+    """
+
+    def get_inputs(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
+        x = torch.from_numpy(sample.time_series.copy()).float()
+        time_points = torch.from_numpy(sample.time_points.copy()).float()
+        return {"x": x, "t": time_points}
+
+    def n_inputs(self, sample: TimeSeriesSample) -> int:
+        return int(self.get_inputs(sample)["x"].shape[0])
+
+
+class ParamICTimeInputAdapter:
+    """
+    Adapter for parameter, initial conditions, and time input.
+
+    Returns:
+        dict with keys "params", "ic", "t"
+    """
+
+    def get_inputs(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
+        parameters = torch.from_numpy(sample.parameters.values.copy()).float()
+        initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
+        time_points = torch.from_numpy(sample.time_points.copy()).float()
+        return {"params": parameters, "ic": initial_conditions, "t": time_points}
+
+    def n_inputs(self, sample: TimeSeriesSample) -> tuple[int, ...]:
+        inputs = self.get_inputs(sample)
+        return tuple(int(i.shape[0]) for i in inputs.values())
 
 
 class ParameterTargetAdapter:
@@ -126,3 +160,35 @@ class ParameterICForecastTargetAdapter:
 
     def n_targets(self, sample: TimeSeriesSample) -> int:
         return int(self.get_targets(sample).shape[0])
+
+
+class ParamICStateTimeDerivativeTargetAdapter:
+    """
+    Adapter for parameter, initial conditions, state, time, and time derivative targets.
+
+    Returns:
+        dict with keys "params", "ic", "x", "d_latent_x", "t"
+    """
+
+    def get_targets(self, sample: TimeSeriesSample) -> dict[str, torch.Tensor]:
+        params = torch.from_numpy(sample.parameters.values.copy()).float()
+        initial_conditions = torch.from_numpy(sample.initial_conditions.values.copy()).float()
+        state = torch.from_numpy(sample.time_series.copy()).float()  # (2n, T)
+        time_points = torch.from_numpy(sample.time_points.copy()).float()
+
+        d_latent_x = preference_dynamics_rhs_torch(
+            t=time_points,
+            state=state,
+            params=params,
+        )
+        return {
+            "params": params,
+            "ic": initial_conditions,
+            "x": state,
+            "d_latent_x": d_latent_x,
+            "t": time_points,
+        }
+
+    def n_targets(self, sample: TimeSeriesSample) -> tuple[int, ...]:
+        targets = self.get_targets(sample)
+        return tuple(int(t.shape[0]) for t in targets.values())

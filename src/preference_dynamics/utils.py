@@ -251,6 +251,20 @@ def to_cpu_numpy[T](data: T) -> T:
     return cast(T, out)
 
 
+def stack_dict_tensors(data: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
+    """
+    Stacks tensors in a list of dictionaries into a single dictionary of stacked tensors.
+    Assumes all dictionaries have the same keys.
+    """
+    out: dict[str, list[torch.Tensor]] = {k: [] for k in data[0]}
+    for pred in data:
+        for key, value in pred.items():
+            out[key].append(value)
+
+    out_tensor = {k: torch.vstack(v) for k, v in out.items()}
+    return out_tensor
+
+
 def to_mathematica_parameters(config) -> None:  # type: ignore
     """
     Print ODEConfig as Mathematica parameter assignment string, for debugging purposes.

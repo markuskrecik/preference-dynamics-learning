@@ -5,7 +5,6 @@ Trainer class for neural network parameter prediction models.
 import logging
 import random
 import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, Self
 
@@ -25,6 +24,7 @@ from preference_dynamics.utils import (
     assemble_checkpoint_path,
     if_logging,
     parse_checkpoint_path,
+    stack_dict_tensors,
     to_device,
 )
 
@@ -141,10 +141,10 @@ class Trainer:
         """
 
         model.to(self.device)
-        with torch.no_grad():
-            inputs = dataloader.dataset[0]["inputs"]
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            model.forward(**inputs)
+        # with torch.no_grad():
+        inputs = dataloader.dataset[0]["inputs"]
+        inputs = to_device(inputs, self.device)
+        model(**inputs)
 
         if_logging(mlflow.log_param)("model_num_parameters", num_parameters(model))
 
@@ -170,21 +170,21 @@ class Trainer:
         return torch.device(device)
 
     def _init_loss_function(
-        self, loss_function: str | Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
-    ) -> nn.Module | Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
+        self, loss_function: Literal["mse", "mae", "huber"] | nn.Module
+    ) -> nn.Module:
         """
         Get loss function based on config.
 
         Args:
-            loss_function: Loss function name ("mse", "mae", "huber") or callable
+            loss_function: Loss function name ("mse", "mae", "huber") or nn.Module
 
         Returns:
-            Loss function module or callable
+            Loss function module
 
         Raises:
-            ValueError: If loss function name is unknown
+            ValueError: If loss function is unknown
         """
-        if callable(loss_function) and not isinstance(loss_function, str):
+        if isinstance(loss_function, nn.Module):
             return loss_function
         if loss_function == "mse":
             return nn.MSELoss()
@@ -192,7 +192,9 @@ class Trainer:
             return nn.L1Loss()
         if loss_function == "huber":
             return nn.HuberLoss()
-        raise ValueError(f"Unknown loss function: {loss_function}")
+        raise ValueError(
+            f"Unknown loss function: {loss_function}. Must be 'mse', 'mae', 'huber', or nn.Module."
+        )
 
     def _set_random_seed(self, seed: int) -> None:
         """
@@ -256,23 +258,11 @@ class Trainer:
         predictions = self.model(**inputs)
         return predictions
 
-    def predict(self, dataloader: DataLoader) -> torch.Tensor:
-        """
-        Generate predictions for whole dataset
-
-        Args:
-            dataloader: Data loader for prediction
-
-        Returns:
-            Predictions tensor of shape (N_samples, output_dim)
-        """
-
-        predictions, _, _ = self._evaluate_epoch(dataloader)
-        return predictions
-
     def _evaluate_step(
-        self, batch: dict[str, torch.Tensor]
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, batch: dict[str, torch.Tensor | dict[str, torch.Tensor]]
+    ) -> tuple[
+        torch.Tensor | dict[str, torch.Tensor], torch.Tensor | dict[str, torch.Tensor], torch.Tensor
+    ]:
         """
         Evaluate one batch (forward pass and loss computation).
 
@@ -280,7 +270,7 @@ class Trainer:
             batch: Batch dictionary with "inputs" and "targets" keys
 
         Returns:
-            Tuple of (predictions, targets, loss) torch Tensors
+            Tuple of (predictions, targets, loss) where predictions/targets may be dicts or tensors
         """
 
         predictions = self._predict_step(batch)
@@ -290,7 +280,11 @@ class Trainer:
 
         return predictions, targets, loss
 
-    def _evaluate_epoch(self, dataloader: DataLoader) -> tuple[torch.Tensor, torch.Tensor, float]:
+    def _evaluate_epoch(
+        self, dataloader: DataLoader
+    ) -> tuple[
+        torch.Tensor | dict[str, torch.Tensor], torch.Tensor | dict[str, torch.Tensor], float
+    ]:
         """
         Evaluate one epoch for whole dataset.
 
@@ -310,18 +304,27 @@ class Trainer:
         total_loss = 0.0
         n_batches = 0
 
-        with torch.no_grad():
-            for batch in dataloader:
-                predictions, targets, loss = self._evaluate_step(batch)
-                all_predictions.append(predictions)
-                all_targets.append(targets)
-                total_loss += loss.item()
-                n_batches += 1
+        # with torch.no_grad():
+        for batch in dataloader:
+            predictions, targets, loss = self._evaluate_step(batch)
+            all_predictions.append(predictions)
+            all_targets.append(targets)
+            total_loss += loss.item()
+            n_batches += 1
 
         avg_loss = total_loss / n_batches if n_batches > 0 else 0.0
-        all_predictions = torch.cat(all_predictions, dim=0)
-        all_targets = torch.cat(all_targets, dim=0)
-        return all_predictions, all_targets, avg_loss
+
+        if isinstance(all_predictions[0], dict):
+            out_predictions = stack_dict_tensors(all_predictions)
+        else:
+            out_predictions = torch.cat(all_predictions, dim=0)
+
+        if isinstance(all_targets[0], dict):
+            out_targets = stack_dict_tensors(all_targets)
+        else:
+            out_targets = torch.cat(all_targets, dim=0)
+
+        return out_predictions, out_targets, avg_loss
 
     def evaluate(self, dataloader: DataLoader) -> tuple[torch.Tensor, torch.Tensor, float]:
         """
@@ -364,6 +367,20 @@ class Trainer:
         _, _, avg_loss = self._evaluate_epoch(test_dataloader)
         logger.info(f"Test loss: {avg_loss}")
         return avg_loss
+
+    def predict(self, dataloader: DataLoader) -> torch.Tensor:
+        """
+        Generate predictions for whole dataset
+
+        Args:
+            dataloader: Data loader for prediction
+
+        Returns:
+            Predictions tensor of shape (N_samples, output_dim)
+        """
+
+        predictions, _, _ = self._evaluate_epoch(dataloader)
+        return predictions
 
     def _train_step(self, batch: dict[str, dict[str, torch.Tensor]]) -> torch.Tensor:
         """

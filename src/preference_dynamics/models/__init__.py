@@ -15,11 +15,14 @@ from preference_dynamics.models.base import PredictorModel
 from preference_dynamics.models.cnn1d import CNN1DPredictor
 from preference_dynamics.models.cnn1d_feat import CNN1DFeatPredictor
 from preference_dynamics.models.cnn1d_residual import CNN1DResidualPredictor
+from preference_dynamics.models.inverse_pinn import InversePINNPredictor, Surrogate
 from preference_dynamics.models.schemas import (
     CNN1DConfig,
     CNN1DFeatConfig,
     CNN1DResidualConfig,
+    InversePINNConfig,
     ModelConfig,
+    SurrogateConfig,
 )
 from preference_dynamics.models.utils import load_model, num_parameters, save_model
 
@@ -27,12 +30,21 @@ MODEL_REGISTRY: dict[str, tuple[type[ModelConfig], type[PredictorModel]]] = {
     "cnn1d": (CNN1DConfig, CNN1DPredictor),
     "cnn1d_feat": (CNN1DFeatConfig, CNN1DFeatPredictor),
     "cnn1d_residual": (CNN1DResidualConfig, CNN1DResidualPredictor),
+    "inverse_pinn": (InversePINNConfig, InversePINNPredictor),
+    "surrogate": (SurrogateConfig, Surrogate),
 }
 
 __all__ = [
+    "PredictorModel",
     "ModelConfig",
     "CNN1DConfig",
     "CNN1DFeatConfig",
+    "InversePINNConfig",
+    "SurrogateConfig",
+    "Surrogate",
+    "CNN1DPredictor",
+    "CNN1DFeatPredictor",
+    "InversePINNPredictor",
     "CNN1DResidualConfig",
     "CNN1DPredictor",
     "CNN1DFeatPredictor",
