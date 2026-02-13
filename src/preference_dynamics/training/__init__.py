@@ -13,16 +13,12 @@ This module provides:
 
 from preference_dynamics.training.logging import log_PINN_loss
 from preference_dynamics.training.loss import PINNLoss
-from preference_dynamics.training.metrics import (
-    compute_metrics,
-    time_series_match_metrics,
-)
+from preference_dynamics.training.metrics import compute_metrics
 from preference_dynamics.training.trainer import Trainer
 
 __all__ = [
     "Trainer",
     "compute_metrics",
-    "time_series_match_metrics",
     "log_PINN_loss",
     "PINNLoss",
 ]
