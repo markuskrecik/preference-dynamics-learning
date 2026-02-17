@@ -7,6 +7,7 @@ import torch
 
 from preference_dynamics.utils import if_logging
 
+
 @if_logging
 def log_PINN_loss(loss: dict[str, float | torch.Tensor], step: int) -> None:
     """
@@ -36,4 +37,3 @@ def log_PINN_loss(loss: dict[str, float | torch.Tensor], step: int) -> None:
         if isinstance(total_val, torch.Tensor):
             total_val = total_val.item()
         mlflow.log_metric("loss_total", total_val, step=step)
-
